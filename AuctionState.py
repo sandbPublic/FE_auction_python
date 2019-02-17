@@ -2,7 +2,7 @@ import GameData
 import Pricing
 import itertools
 import time
-
+import random
 
 class AuctionState:
     def __init__(self, players):
@@ -24,9 +24,17 @@ class AuctionState:
             bid_file = open(bid_file_name, 'r')
             for line in bid_file.readlines():
                 next_bid_row = []
+                unit_average = 0
                 for i, item in enumerate(line.split()):
-                    next_bid_row.append(float(item))
-                    self.bid_sums[i] += float(item)
+                    bid = float(item)
+                    next_bid_row.append(bid)
+                    self.bid_sums[i] += bid
+                    unit_average += bid
+                unit_average /= (i+1)
+
+                while len(next_bid_row) < len(self.players):
+                    next_bid_row.append(unit_average * random.triangular(0.75, 1.25))
+
                 self.bids.append(next_bid_row)
             bid_file.close()
         except ValueError as error:
@@ -35,7 +43,7 @@ class AuctionState:
             print(error)
 
     def print_bids(self):
-        print('BIDS           ', end=' ')
+        print('--BIDS--       ', end=' ')
         for player in self.players:
             print(f'{player:10s}', end=' ')
         print()
@@ -135,7 +143,7 @@ class AuctionState:
             print()
 
     def print_teams_detailed(self):
-        print('\n---TEAMS---', end='')
+        print('\n---Teams detailed---', end='')
 
         teams = self.teams()
         for team, player in zip(teams, self.players):
@@ -144,6 +152,7 @@ class AuctionState:
                 print(f'{member.name:15s} | '
                       f'{GameData.promo_strings[member.promo_type]} | '
                       f'{GameData.chapters[member.join_chapter]}')
+        print()
 
     # How player i values player j's team. Adjusted for redundancy across the game.
     def value_matrix(self):
@@ -162,29 +171,26 @@ class AuctionState:
     # Also adjusted for promo competition
     def value_matrix_by_chapter(self):
         v_matrix = [([0] * len(self.players)) for player in self.players]
-        promo_competitors = [0] * len(GameData.units)
 
-        for u_i in range(len(GameData.units)):
-            for u_j in range(u_i + 1, len(GameData.units)):
-                if GameData.units[u_i].competitor(GameData.units[u_j]):
-                    promo_competitors[u_j] += 1
+        for unit_c in GameData.units_with_competitors:
+            unit_c.set_current_competitors()
 
-        for p_i in range(len(self.players)):
-            for c in range(len(GameData.chapters)):
+        for c, MC_row in enumerate(self.MC_matrix):
+            for p_i in range(len(self.players)):
                 team_values_this_chapter = [0] * len(self.players)
 
-                for unit, uvpc, comp in zip(GameData.units, self.unit_value_per_chapter, promo_competitors):
+                for unit, uvpc in zip(GameData.units, self.unit_value_per_chapter):
                     if unit.join_chapter <= c:
-                        if comp == 0:
+                        if unit.current_competitors == 0:
                             team_values_this_chapter[unit.owner] += uvpc[p_i]
                         else:
-                            team_values_this_chapter[unit.owner] += uvpc[p_i] * unit.late_promo_factors[comp-1][c]
+                            team_values_this_chapter[unit.owner] += uvpc[p_i] * unit.get_late_promo_factor(c)
                     else:  # all subsequent units have not appeared yet
                         break
 
                 for p_j in range(len(self.players)):
                     v_matrix[p_i][p_j] += Pricing.redundancy(
-                        team_values_this_chapter[p_j], self.MC_matrix[c][p_i], self.opp_ratio)
+                        team_values_this_chapter[p_j], MC_row[p_i], self.opp_ratio)
 
         return v_matrix
 
@@ -294,7 +300,7 @@ class AuctionState:
                     recursive_rotate(p_i + 1)
 
         for r, rotation in enumerate(self.rotations):
-            trading_players = set([p for p in range(len(rotation)) if p != rotation[p]])
+            trading_players = [p for p, r in enumerate(rotation) if p != r]
             print(f'{time.time() - start:7.2f} {r:3d}/{len(self.rotations):3d}  '
                   'Rotation ', rotation, '  Trading players ', trading_players)
             recursive_rotate(0)

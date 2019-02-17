@@ -160,7 +160,7 @@ for entry in promo_item_acquire_times_FE7_HNM:
             for t in range(promo_ES):
                 row[t] += entry['number']
 
-unit_data_FE7_HNM = [
+unit_data_FE7_HNM_split_Marcus = [
     # chapter
     # 11 / 0
     # 12 / 1
@@ -202,8 +202,8 @@ unit_data_FE7_HNM = [
     # 21 / 13
     # 22 / 14
     ['Isadora', 14, promo_NO],
-    ['Heath', 14, promo_EW],
-    ['Rath', 14, promo_OB],
+    ['Heath', 15, promo_EW],
+    ['Rath', 15, promo_OB],
     # 23 / 15
     ['Hawkeye', 15, promo_NO],
     # 23x / 16
@@ -233,6 +233,80 @@ unit_data_FE7_HNM = [
     # ['Athos', 29, promo_NO]
 ]
 
+unit_data_FE7_HNM = [
+    # chapter
+    # 11 / 0
+    # 12 / 1
+    ['Matthew', 1, promo_FC],  # free for 11 / 1
+    ['Serra', 1, promo_GR],
+    ['Oswin', 1, promo_KC], # Will Oswin or Lowen be promoted first?
+    ['Eliwood', 1, promo_HS],
+    ['Lowen', 1, promo_KC],
+    ['Rebecca', 1, promo_OB],
+    ['Dorcas', 1, promo_HC],
+    ['Bartre&Karla', 1, promo_HC],
+    # 13 / 2
+    ['Guy', 2, promo_HC],
+    # 13x / 3
+    # 14 / 4
+    ['Erk', 4, promo_GR],
+    ['Priscilla', 5, promo_GR],  # unlikely to contribute in join chapter
+    # 15 / 5
+    # 16 / 6
+    ['Florina', 6, promo_EW],
+    ['Lyn', 6, promo_HS],  # no longer free, restricted to box
+    ['Sain', 6, promo_KC],
+    ['Kent', 6, promo_KC],
+    ['Wil', 6, promo_OB],
+    # 17 / 7
+    ['Raven', 7, promo_HC],
+    ['Lucius', 8, promo_GR],  # unlikely to contribute in join chapter
+    # 17x / 8
+    ['Marcus>=17x', 8, promo_NO],
+    ['Canas', 8, promo_GR],
+    # 18 / 9
+    # 19 / 10
+    ['Dart', 10, promo_OS],
+    ['Fiora', 10, promo_EW],
+    # 19x / 11
+    # 20 / 12
+    ['Legault', 12, promo_FC],  # unlikely to contribute in join chapter
+    # 21 / 13
+    # 22 / 14
+    ['Isadora', 14, promo_NO],
+    ['Heath', 15, promo_EW],
+    ['Rath', 15, promo_OB],
+    # 23 / 15
+    ['Hawkeye', 15, promo_NO],
+    # 23x / 16
+    # 24 / 17
+    # ['Wallace/Geitz', 17, promo_NO],
+    # 25 / 18
+    ['Farina', 18, promo_EW],
+    # 26 / 19
+    ['Pent', 19, promo_NO],
+    ['Louise', 19, promo_NO],
+    # 27 / 20
+    # ['Harken', 20, promo_NO],
+    # ['Karel', 20, promo_NO],
+    # 28 / 21
+    ['Nino', 21, promo_GR],
+    # 28x / 22
+    ['Jaffar', 22, promo_NO],
+    # 29 / 23
+    ['Vaida', 23, promo_NO],
+    # 30 / 24
+    # 31 / 25
+    # 31x / 26
+    # 32 / 27
+    ['Renault', 27, promo_NO],
+    # 32x / 28
+    # 33 / 29
+    # ['Athos', 29, promo_NO]
+    ['--none--', 29, promo_NO]
+]
+
+
 unit_data = unit_data_FE7_HNM
 
 
@@ -245,15 +319,20 @@ class Unit:
         self.owner = -1
         self.late_promo_factors = []  # same_promo_priors x chapters
         self.earliest_promo = -1
+        self.competitors = set()
+        self.current_competitors = 0
 
-    def competitor(self, other):
-        # short circuit, put most unlikely first
-        # share type == .124
-        # (4*3 KC + 4*3 HC + 3*2 OB + 4*3 EW + 6*5 GR + 1*0 OS + 2*1 FC + 2*1 HS + 9*8 NO) /(35*34)
-        # share owner == 6/34 = .176
-        # promo_NO == 9/35 = .257
-        return self.promo_type == other.promo_type and self.owner == other.owner and self.promo_type != promo_NO
+    def set_current_competitors(self):
+        self.current_competitors = 0
+        for comp in self.competitors:
+            if self.owner == comp.owner:
+                self.current_competitors += 1
 
+    def get_late_promo_factor(self, chapter):
+        return self.late_promo_factors[self.current_competitors-1][chapter]
+
+
+units_with_competitors = set()
 
 units = [Unit(ID, data) for ID, data in enumerate(unit_data)]
 for u, unit_prior in enumerate(units):
@@ -264,7 +343,9 @@ for u, unit_prior in enumerate(units):
 
     # add an entry for each prior unit in same promotion class
     for unit_post in units[u + 1:]:
-        if unit_prior.competitor(unit_post):
+        if unit_prior.promo_type == unit_post.promo_type and unit_prior.promo_type != promo_NO:
+            units_with_competitors.add(unit_post)
+            unit_post.competitors.add(unit_prior)
             unit_post.late_promo_factors.append([1] * len(chapters))
 
 # reduce late_promo_factor for competition
@@ -283,3 +364,5 @@ for unit in units:
     # print(unit.name)
     # for row in unit.late_promo_factors:
     #     print(row)
+
+
