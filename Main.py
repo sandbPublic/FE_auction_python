@@ -19,15 +19,13 @@ def main():
     while test.improve_allocation_swaps():
        pass
 
-    test.improve_allocation_rotate_fast()
+    test.improve_allocation_rotate()
     test.print_teams()
     test.print_teams_detailed()
 
-    test.print_value_matrix(test.value_matrix_by_chapter_fn())
+    test.print_value_matrix(test.value_matrix_by_chapter())
+    print(Pricing.allocation_score(test.value_matrix_by_chapter()))
 
-    print(Pricing.allocation_score(test.value_matrix_by_chapter_fn()))
-
-    print('total update ratio ', test.total_chapter_and_player_updates / test.total_updates, ' ', test.total_updates)
     print()
 
 
