@@ -4,9 +4,6 @@ import itertools
 import time
 
 
-# todo save chapterwise values, update only for trading player/chapters after earliest trade
-
-
 class AuctionState:
     def __init__(self, players):
         self.players = players
@@ -23,6 +20,7 @@ class AuctionState:
         # Memoize these; when a swap occurs, only update values for trading players
         # starting from chapter of earliest swap.
         # running_total_by_chapter[-1] == final value matrix
+        # For swaps, saves about 2/3rds of writes
         self.value_matrix_by_chapter = []  # C x P x P
         self.running_total_by_chapter = []  # C x P x P
         for c in range(len(GameData.chapters)):
@@ -34,6 +32,9 @@ class AuctionState:
         # but the next trade will update the reversion as well
         self.prev_chapter_update = 0
         self.prev_players_trading = set(range(len(players)))
+
+        self.total_chapter_and_player_updates = 0
+        self.total_updates = 0
 
         self.rotations = [p for p in itertools.permutations(range(len(players))) if Pricing.just_one_loop(p)]
 
@@ -207,12 +208,15 @@ class AuctionState:
         return v_matrix
 
     def update_value_matrix_by_chapter(self, new_trading_players, new_first_chapter):
-        # make sure to update changes that should have been done by reverted trades
+        # prepare to update any changes that should have been done by reverted trades
         trading_players = self.prev_players_trading | new_trading_players
         self.prev_players_trading = new_trading_players
 
         first_chapter = min(self.prev_chapter_update, new_first_chapter)
         self.prev_chapter_update = new_first_chapter
+
+        self.total_chapter_and_player_updates += len(trading_players) * (len(GameData.chapters) - first_chapter)
+        self.total_updates += 1
 
         promo_competitors = [0] * len(GameData.units)
         units_to_update_no_comp = []
@@ -292,26 +296,36 @@ class AuctionState:
 
         current_score = self.get_score()
         swapped = False
-        for u_i, unit_i in enumerate(GameData.units):
-            for unit_j in GameData.units[u_i+1:]:  # only try each pair once
-                if unit_i.owner != unit_j.owner:
 
-                    unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
-                    self.update_value_matrix_by_chapter({unit_i.owner, unit_j.owner},
-                                                        min(unit_i.join_chapter, unit_j.join_chapter))
+        #for u_i, unit_i in enumerate(GameData.units):
+        #    for unit_j in GameData.units[u_i+1:]:
+        #        if unit_i.owner != unit_j.owner:
 
-                    if current_score < self.get_score():
-                        current_score = self.get_score()
-                        swapped = True
-                        # Use name of owner before swap
-                        print(f'Swapping {self.players[unit_j.owner]} '
-                              f'{unit_i.name} <-> {unit_j.name} '
-                              f'{self.players[unit_i.owner]}')
-                        print(f'New score {current_score:6.2f}')
-                        print()
-                    else:
+        # ordering by team should minimize value matrix rewrites as several
+        # consecutive swaps will affect the same two players
+        teams = self.teams()
+
+        for t_i, team_i in enumerate(teams):
+            for unit_i in team_i:
+                for team_j in teams[t_i+1:]:
+                    for unit_j in team_j:
                         unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
+                        self.update_value_matrix_by_chapter({unit_i.owner, unit_j.owner},
+                                                            min(unit_i.join_chapter, unit_j.join_chapter))
 
+                        if current_score < self.get_score():
+                            current_score = self.get_score()
+                            swapped = True
+                            # Use name of owner before swap
+                            print(f'Swapping {self.players[unit_j.owner]} '
+                                  f'{unit_i.name} <-> {unit_j.name} '
+                                  f'{self.players[unit_i.owner]}')
+                            print(f'New score {current_score:6.2f}')
+                            print()
+                        else:
+                            unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
+
+        self.update_value_matrix_by_chapter(set(range(len(self.players))), 0)
         return swapped
 
     # try all rotations (swaps of three or more) to improve score
@@ -321,11 +335,13 @@ class AuctionState:
         # don't need to immediately update team arrangements for calculations
 
         start = time.time()
-        indices = [0]*len(self.players)
-        teams = self.teams()
 
+        self.update_value_matrix_by_chapter(set(range(len(self.players))), 0)
         current_score = self.get_score()
         rotated = False
+
+        indices = [0]*len(self.players)
+        teams = self.teams()
 
         def recursive_rotate(p_i):
             nonlocal teams
@@ -334,19 +350,25 @@ class AuctionState:
 
             if p_i >= len(self.players):  # base case
                 for rotation in self.rotations:
-
+                    trading_players = set()
+                    min_chapter = len(GameData.chapters) + 1
                     for p in range(len(self.players)):
                         teams[p][indices[p]].owner = rotation[p]  # p's unit goes to rotation[p]
+                        if rotation[p] != p:
+                            trading_players.add(p)
+                            if min_chapter > teams[p][indices[p]].join_chapter:
+                                min_chapter = teams[p][indices[p]].join_chapter
+
+                    self.update_value_matrix_by_chapter(trading_players, min_chapter)
 
                     if current_score < self.get_score():
                         current_score = self.get_score()
 
                         print('\nRotating:')
-                        for p2 in range(len(self.players)):
-                            if rotation[p2] != p2:
-                                print(f'{self.players[p2]:10s} -> '
-                                      f'{teams[p2][indices[p2]].name:10s} -> '
-                                      f'{self.players[rotation[p2]]:10s}')
+                        for p2 in trading_players:
+                            print(f'{self.players[p2]:10s} -> '
+                                  f'{teams[p2][indices[p2]].name:10s} -> '
+                                  f'{self.players[rotation[p2]]:10s}')
                         print(f'New score {current_score:6.2f}')
                         print()
 
@@ -359,6 +381,7 @@ class AuctionState:
 
                 for p in range(len(self.players)):
                     teams[p][indices[p]].owner = p  # unrotate, if teams were updated rotates to new teams
+                self.update_value_matrix_by_chapter(set(range(len(self.players))), 0)
 
             else:
                 for indices[p_i] in range(self.max_team_size):
@@ -373,6 +396,74 @@ class AuctionState:
                     recursive_rotate(p_i + 1)
 
         recursive_rotate(0)
+        return rotated
+
+    # try all rotations (swaps of three or more) to improve score
+    # iterate over rotations at the highest level,
+    # skip branching tree if player at that level of recursion isn't trading
+    # only full p rotations will cost much time
+    def improve_allocation_rotate_fast(self):
+        # for each team member for each player (recursive for loops)
+        # base case, try all rotations
+        # don't need to immediately update team arrangements for calculations
+
+        start = time.time()
+
+        current_score = self.get_score()
+        rotated = False
+
+        indices = [0]*len(self.players)
+        teams = self.teams()
+
+        def recursive_rotate(p_i):
+            nonlocal teams
+            nonlocal current_score
+            nonlocal rotated
+
+            if p_i >= len(self.players):  # base case
+                min_chapter = len(GameData.chapters) + 1
+                for p in trading_players:
+                    teams[p][indices[p]].owner = rotation[p]  # p's unit goes to rotation[p]
+                    if min_chapter > teams[p][indices[p]].join_chapter:
+                        min_chapter = teams[p][indices[p]].join_chapter
+
+                self.update_value_matrix_by_chapter(trading_players, min_chapter)
+
+                if current_score < self.get_score():
+                    current_score = self.get_score()
+
+                    print('\nRotating:')
+                    for p2 in trading_players:
+                        print(f'{self.players[p2]:10s} -> '
+                              f'{teams[p2][indices[p2]].name:10s} -> '
+                              f'{self.players[rotation[p2]]:10s}')
+                    print(f'New score {current_score:6.2f}')
+                    print()
+
+                    while self.improve_allocation_swaps():
+                        pass
+                    current_score = self.get_score()
+
+                    teams = self.teams()
+                    rotated = True
+                else:
+                    for p in trading_players:
+                        teams[p][indices[p]].owner = p  # unrotate, if teams were updated rotates to new teams
+
+            else:
+                if p_i in trading_players:
+                    for indices[p_i] in range(self.max_team_size):
+                        recursive_rotate(p_i + 1)
+                else:  # don't branch, this player isn't trading in this rotation
+                    recursive_rotate(p_i + 1)
+
+        for rotation in self.rotations:
+            self.update_value_matrix_by_chapter(set(range(len(self.players))), 0)
+            trading_players = set([p for p in range(len(rotation)) if p != rotation[p]])
+            print('Rotation ', rotation, '  Trading players ', trading_players)
+            print(time.time() - start)
+            recursive_rotate(0)
+
         return rotated
 
 
