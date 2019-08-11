@@ -47,10 +47,13 @@ def pareto_prices(value_matrix, opp_ratio):
 # Add slight preference for each player considering their own team good:
 # If a change would cause each player to think they would finish 8 turns sooner,
 # but 1 turn later relative to average opponent, that change is neutral.
-def allocation_score(value_matrix):
+# Testing with different values shows that 1/8 has very little effect,
+# values around 1 have large effect and produce close to equal team self assessment
+# Seems to have low cost to satisfaction?
+def allocation_score(value_matrix, robust_factor):
     score = 0
     for i, row in enumerate(value_matrix):
-        score += comp_sat(row, i) + row[i]/8
+        score += comp_sat(row, i) + row[i]*robust_factor
     return score
 
 
