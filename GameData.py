@@ -109,7 +109,7 @@ chapters_FE8_Ephraim = [
     '21  Sacred Stone'
 ]
 
-chapters = chapters_FE7
+chapters = chapters_FE8_Eirika
 
 promo_item_acquire_times_FE7_HNM = [
     # Entries that appear with a line break between
@@ -205,47 +205,47 @@ promo_item_acquire_times_FE8 = [
     # 4/ 5
     # 5/ 6
 
-    { 8, promo_GR, 1}, # if all villages visited
+    { 8, promo_GR, 1},  # if all villages visited, only usable on ch6
     #5x/ 7
     # 6/ 8
 
-    { 9, promo_OB, 1}, # if civs survive
+    { 9, promo_OB, 1},  # if civs survive
     # 7/ 9
 
-    {10, promo_KC, 1}, # Murray
+    {10, promo_KC, 1},  # Murray
     # 8/10
 
-    {11, promo_EW, 1}, # chest
+    {11, promo_EW, 1},  # chest
     # 9/11
-    {11, promo_O8, 1}, # a pirate, b chest
+    {11, promo_O8, 1},  # a pirate, b chest
 
     #10/12
     #{12, promo_HC, 1}, # b ONLY, village
-    {12, promo_HC, 1}, # 10a or 13b, Gerik
+    {12, promo_HC, 1},  # 10a or 13b, Gerik
 
-    {13, promo_GR, 1}, # a ONLY, Pablo
+    {13, promo_GR, 1},  # a ONLY, Pablo
     #{13, promo_KC, 1}, # b ONLY, if all npc cavs survive
     #11/13
     #12/14
     #{14, promo_GR, 1}, # b ONLY, shaman
 
     #13/15
-    {15, promo_EW, 1}, # 13a or 10b, Cormag
+    {15, promo_EW, 1},  # 13a or 10b, Cormag
 
-    {16, promo_KC, 1}, # a ONLY, Aias
+    {16, promo_KC, 1},  # a ONLY, Aias
     #14/16
-    {16, promo_GR, 1}, # chest
+    {16, promo_GR, 1},  # chest
 
-    {16, promo_HC, 1}, # a ONLY, myrmidon
+    {16, promo_HC, 1},  # a ONLY, myrmidon
 
     #{17, promo_KC, 1}, # b ONLY, Vigarde
     #15/17
-    {17, promo_ES, 1}, # village
-    {17, promo_GR, 1}, # steal shaman
+    {17, promo_ES, 1},  # village
+    {17, promo_GR, 1},  # steal shaman
 
     #16/18
-    {18, promo_KC, 1}, # chest
-    {18, promo_HC, 1}, # enemy
+    {18, promo_KC, 1},  # chest
+    {18, promo_HC, 1},  # enemy
 
     {19, promo_HS, 2},
     #17/19
@@ -428,7 +428,7 @@ unit_data_FE8 = [
     ['Vanessa', 2, promo_EW],
     ['Moulder', 2, promo_GR],
     ['Ross', 2, promo_O8],  # can promo_HC
-    ['Garcia', 2, promo_HC],
+    ['Garcia', 3, promo_HC],
     # 3
     ['Neimi', 3, promo_OB],
     ['Colm', 3, promo_O8],
@@ -476,10 +476,10 @@ unit_data_FE8 = [
     # 19/20
     # 20/21
     # 21/22
-    ['BLANK', 22, promo_NO]
+    ['Bonus Units', 22, promo_NO]
 ]
 
-unit_data = unit_data_FE7_HNM
+unit_data = unit_data_FE8
 
 
 class Unit:

@@ -26,7 +26,7 @@ def redundancy(value, max_v, opp_ratio):
         return 0
 
 
-def adjust_v_matrix(value_matrix, max_values, opp_ratio):
+def apply_redundancy(value_matrix, max_values, opp_ratio):
     for i in range(len(value_matrix)):
         for j in range(len(value_matrix)):
             value_matrix[i][j] = redundancy(value_matrix[i][j], max_values[i], opp_ratio)
