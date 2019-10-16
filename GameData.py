@@ -24,6 +24,40 @@ promo_strings = [
     '     '
 ]
 
+chapters_FE6 = [
+    ' 1  Dawn of Destiny',
+    ' 2  Princess of Bern',
+    ' 3  Late Arrival',
+    ' 4  Collapse of the Alliance',
+    ' 5  Fire Emblem',
+    ' 6  Trap'
+    ' 7  Rebellion of Ostia',
+    ' 8  Reunion',
+    ' 8x Blazing Sword',
+    ' 9  Misty Isles',
+    '10  Resistance Forces/Caught in the Middle',
+    '11  Hero of the Western Isles/Escape to Freedom',
+    '12  True Enemy',
+    '12x Axe of Thunder',
+    '13  Rescue Plan',
+    '14  Arcadia',
+    '14x Infernal Element',
+    '15  Dragon Girl',
+    '16  Retaking the Capital',
+    '16x Pinnacle of Light',
+    '17  Bishop\'s Teachings/Path Through the Ocean',
+    '18  Law of Sacae/Frozen River',
+    '19  Battle in Bulgar/Bitter Cold',
+    '20  Silver Wolf/Liberation of Ilia',
+    '20x Bow of the Winds/Spear of Ice',
+    '21  Sword of Seals',
+    '21x Silencing Darkness',
+    '22  Neverending Dream',
+    '23  Ghost of Bern',
+    '24  Truth of the Legend',
+    '25  Beyond the Darkness'
+]
+
 chapters_FE7 = [
     '11  Another Journey',
     '12  Birds of a Feather',
@@ -272,6 +306,59 @@ for entry in promo_item_acquire_times_FE7_HNM:
             for t in range(promo_ES):
                 row[t] += entry['number']
 
+unit_data_FE6 = [
+    ['Lance', 1, promo_KC],
+    ['Alan', 1, promo_KC],
+    ['Wolt', 1, promo_OB],
+    ['Bors', 1, promo_KC],
+    ['Shanna', 2, promo_EW],
+    ['Dieck', 2, promo_HC],
+    ['Lott', 2, promo_HC],
+    ['Wade', 2, promo_HC],
+    ['Ellen', 2, promo_GR],
+    ['Lugh', 3, promo_GR],
+    ['Chad', 3, promo_NO],
+    ['Rutger', 4, promo_HC],
+    ['Clarine', 4, promo_GR],
+    ['Marcus>=Ch6', 6, promo_GR],
+    ['Saul', 6, promo_GR],
+    ['Sue', 6, promo_OB],
+    ['Dorothy', 6, promo_OB],
+    ['Zealot', 7, promo_NO],
+    ['Treck', 7, promo_KC],
+    ['Noah', 7, promo_KC],
+    ['Astohl', 8, promo_NO],
+    ['Oujay', 8, promo_HC],
+    ['Barth', 8, promo_KC],
+    ['Wendy', 8, promo_KC],
+    ['Lilina', 8, promo_GR],
+    ['Shin', 10, promo_OB],
+    ['Fir', 10, promo_HC],
+    ['Gonzales', 11, promo_HC],
+    ['Geese', 11, promo_HC],
+    ['Klein', 12, promo_NO],
+    ['Tate', 12, promo_EW],
+    ['Echidna', 12, promo_NO],
+    ['Bartre', 12, promo_NO],
+    ['Ray', 13, promo_GR],
+    ['Cath', 13, promo_NO],
+    ['Miledy', 15, promo_EW],
+    ['Perceval', 15, promo_NO],
+    ['Cecelia', 16, promo_NO],
+    ['Sophia', 16, promo_GR],
+    ['Igrene', 18, promo_NO],
+    ['Garret', 18, promo_NO],
+    ['Fa', 19, promo_NO],
+    ['Hugh', 19, promo_GR],
+    ['Ziess', 19, promo_EW],
+    ['Douglas', 20, promo_NO],
+    ['Niime', 23, promo_NO],
+    ['Juno', 24, promo_NO],
+    ['Dayan', 24, promo_NO],
+    ['Yodel', 26, promo_NO],
+    ['Karel', 29, promo_NO]
+]
+
 unit_data_FE7_HNM_split_Marcus = [
     # chapter
     # 11 / 0
@@ -436,12 +523,12 @@ unit_data_FE8 = [
     ['Artur', 4, promo_GR],
     ['Lute', 4, promo_GR],
     # 5
+    ['Seth>=5', 5, promo_NO],
     ['Natasha', 5, promo_GR],
     ['Joshua', 5, promo_HC],
     # 5x/ 6
     # ['Orson',		6, promo_NO],
     # 6/ 7
-    ['Seth>=6', 7, promo_NO],
     # 7/ 8
     # 8/ 9
     ['Forde', 9, promo_KC],
@@ -489,10 +576,15 @@ class Unit:
         self.join_chapter = data_i[1]
         self.promo_type = data_i[2]
         self.owner = -1
+        self.prior_owner = -1
         self.late_promo_factors = []  # same_promo_priors x chapters
         self.earliest_promo = -1
         self.competitors = set()
         self.current_competitors = 0
+
+    def set_owner(self, new_owner):
+        self.prior_owner = self.owner
+        self.owner = new_owner
 
     def set_current_competitors(self):
         self.current_competitors = 0

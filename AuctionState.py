@@ -31,6 +31,8 @@ class AuctionState:
         # increment value of team by manual_synergy[i][j][valuer] if i and j on same team
         # should be triangular matrix since synergy i<->j == j<->i
 
+        self.synergy_relationship_graph = [set() for i in range(len(GameData.units))]
+
         self.rotations = [p for p in itertools.permutations(range(len(players))) if Pricing.just_one_loop(p)]
 
     def read_bids(self, bid_file_name):
@@ -43,10 +45,9 @@ class AuctionState:
                 next_bid_row = [float(i) for i in line.split()]
 
                 if len(next_bid_row) > 0:  # skip empty lines
-                    average = statistics.mean(next_bid_row)
                     # if fewer than max players, create dummy players from existing bids
                     while len(next_bid_row) < len(self.players):
-                        next_bid_row.append(average * random.triangular(0.8, 1.2))
+                        next_bid_row.append(statistics.median(next_bid_row) * random.triangular(0.8, 1.2))
 
                     self.bids.append(next_bid_row)
 
@@ -84,6 +85,12 @@ class AuctionState:
                 player_synergies.append(next_line)
 
             extend_array(player_synergies, len(GameData.units), [0] * len(GameData.units))
+
+            for u_i, synergy_row in enumerate(player_synergies):
+                for u_j, syn in enumerate(synergy_row):
+                    if syn != 0:
+                        self.synergy_relationship_graph[u_i].add(u_j)
+                        self.synergy_relationship_graph[u_j].add(u_i)
 
             self.synergies.append(player_synergies)
             synergy_file.close()
@@ -155,9 +162,11 @@ class AuctionState:
         for unit in GameData.units:
             unit.owner = -1
 
+    # Only need to track team size during initial assignment;
+    # afterward all assignment changes maintain team sizes, using blank slots if necessary.
     def assign_unit(self, unit, new_owner):
-        self.team_sizes[unit.owner] -= 1
-        unit.owner = new_owner
+        unit.set_owner(new_owner)
+        self.team_sizes[unit.prior_owner] -= 1
         self.team_sizes[unit.owner] += 1
 
     def quick_assign(self):
@@ -171,6 +180,7 @@ class AuctionState:
 
     # assign units in order of satisfaction, not recruitment
     def max_sat_assign(self):
+        print()
         print('---Initial assignments---')
         self.clear_assign()
         while self.team_sizes[-1] > 0:  # unassigned units remain
@@ -237,6 +247,14 @@ class AuctionState:
 
         return v_matrix
 
+    # Could avoid recalculating in some circumstances, but these are not common;
+    # at minimum, when a unit is reassigned, need to check for synergy relationship with new teammates;
+    # also when leaving a team; can't save from that unit's prior swap because other teammates may have changed.
+    # Depends on synergy relationship graph density, but on tests with FE8:
+    # 54993/55440 calls to synergy_matrix() required a recalculation, implying very few reassignments meet
+    # the circumstances of having no former or current teammates as connected to any moving unit.
+    # If no synergy relationships, much faster on FE6, but cannot conclude any speedup in general.
+    # Could also only update rows/columns of affected players, but most time is all-player rotations
     def synergy_matrix(self):
         s_matrix = [([0] * len(self.players)) for player in self.players]
 
@@ -326,12 +344,12 @@ class AuctionState:
 
         print()
         print(f'Average team robustness: {robustness/len(self.players):6.2f}')
-        print()
 
         print('HANDICAPS:', end=' ')
         prices = self.handicaps()
         for price in prices:
             print(f' {price:6.2f}   ', end=' ')
+        print()
         print()
 
         print('Handicap adjustments')
@@ -352,7 +370,8 @@ class AuctionState:
         for u_i, unit_i in enumerate(GameData.units):
             for unit_j in GameData.units[u_i+1:]:
                 if unit_i.owner != unit_j.owner:
-                    unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
+                    unit_i.set_owner(unit_j.owner)
+                    unit_j.set_owner(unit_i.prior_owner)
 
                     if current_score < self.get_score():
                         current_score = self.get_score()
@@ -362,40 +381,45 @@ class AuctionState:
                               f'{unit_i.name:12s} <-> {unit_j.name:12s} '
                               f'{self.players[unit_i.owner]:12s}, '
                               f'new score {current_score:6.2f}')
-                    else:
-                        unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
+                    else:  # return units to owners
+                        unit_i.set_owner(unit_j.owner)
+                        unit_j.set_owner(unit_i.prior_owner)
         return swapped
 
     # try all rotations (swaps of three or more) to improve score
     # iterate over rotations at the highest level,
     # skip branching tree if player at that level of recursion isn't trading
     # only full p rotations will cost much time
-    def improve_allocation_rotate(self):
+
+    # If this didn't rotate from rotations[test_until], only need to check until that point:
+    # Complete one "lap" without any successful rotation, lap doesn't need to start at rotation[0]
+    # Set last_rotation to index r whenever a rotation occurs to pass to next execution.
+    def improve_allocation_rotate(self, test_until):
         start = time.time()
 
         current_score = self.get_score()
-        rotated = False
+        last_rotation = -1
 
-        indices = [0]*len(self.players)
+        indices = [0]*len(self.players)  # of units being traded from 0~teamsize-1, set during recursive_rotate branch
         teams = self.teams()
 
         def recursive_rotate(p_i):
             nonlocal teams
             nonlocal current_score
-            nonlocal rotated
+            nonlocal last_rotation
 
             if p_i >= len(self.players):  # base case
                 for p in trading_players:
-                    teams[p][indices[p]].owner = rotation[p]  # p's unit goes to rotation[p]
+                    teams[p][indices[p]].set_owner(rotation[p])  # p's unit goes to rotation[p]
 
                 if current_score < self.get_score():
                     current_score = self.get_score()
 
                     print('\nRotating:')
                     for p2 in trading_players:
-                        print(f'{self.players[p2]:10s} -> '
-                              f'{teams[p2][indices[p2]].name:10s} -> '
-                              f'{self.players[rotation[p2]]:10s}')
+                        print(f'{self.players[p2]:12s} -> '
+                              f'{teams[p2][indices[p2]].name:12s} -> '
+                              f'{self.players[rotation[p2]]:12s}')
                     print(f'New score {current_score:6.2f}')
                     print()
 
@@ -404,22 +428,40 @@ class AuctionState:
                     current_score = self.get_score()
 
                     teams = self.teams()
-                    rotated = True
+                    last_rotation = r
                 else:
                     for p in trading_players:
-                        teams[p][indices[p]].owner = p  # unrotate, if teams were updated rotates to new teams
+                        teams[p][indices[p]].set_owner(p)  # unrotate, if teams were updated rotates to new teams
 
             else:
                 if p_i in trading_players:
-                    for indices[p_i] in range(self.max_team_size):
+                    for indices[p_i] in range(self.max_team_size):  # for each unit in the team
                         recursive_rotate(p_i + 1)
-                else:  # don't branch, this player isn't trading in this rotation
+                else:  # don't branch, this player isn't trading in this rotation, go to next player
                     recursive_rotate(p_i + 1)
 
         for r, rotation in enumerate(self.rotations):
+            if r > test_until and last_rotation < 0:
+                print('Reached latest effected rotation of prior loop. Stopping rotation early.')
+                return last_rotation
+
             trading_players = [p for p, r in enumerate(rotation) if p != r]
             print(f'{time.time() - start:7.2f} {r:3d}/{len(self.rotations):3d}  '
                   'Rotation ', rotation, '  Trading players ', trading_players)
             recursive_rotate(0)
 
-        return rotated
+        return last_rotation
+
+    def run(self):
+        self.print_bids()
+        self.max_sat_assign()
+
+        while self.improve_allocation_swaps():
+            pass
+
+        test_until = len(self.rotations)
+        while test_until >= 0:
+            test_until = self.improve_allocation_rotate(test_until)
+
+        self.print_teams()
+        self.print_value_matrices()
