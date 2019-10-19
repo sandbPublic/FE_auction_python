@@ -1,3 +1,5 @@
+
+
 import GameData
 import Pricing
 import itertools
@@ -18,7 +20,7 @@ class AuctionState:
         self.opp_ratio = 1 - 1/len(players)  # used in pricing functions
         self.team_sizes = []  # index -1 for unassigned
 
-        self.robust_factor = 0.125  # bias in favor of good teams rather than expected victory
+        self.robust_factor = 0.25  # bias in favor of good teams rather than expected victory
         # index by player last for printing/reading and for consistency
         self.bids = []  # U x P, indexing for reading files/printing
         self.bid_sums = [0] * len(players)  # P, used for redundancy adjusted team values
@@ -47,7 +49,7 @@ class AuctionState:
                 if len(next_bid_row) > 0:  # skip empty lines
                     # if fewer than max players, create dummy players from existing bids
                     while len(next_bid_row) < len(self.players):
-                        next_bid_row.append(statistics.median(next_bid_row) * random.triangular(0.8, 1.2))
+                        next_bid_row.append(statistics.median(next_bid_row) * random.triangular(1, 1))
 
                     self.bids.append(next_bid_row)
 
@@ -331,10 +333,10 @@ class AuctionState:
 
         print_matrix(self.synergy_matrix(), 'Synergy')
 
-        print_matrix(self.v_s_matrix(), 'Synergy adjustments')
+        print_matrix(self.v_s_matrix(), 'Synergy adjusted')
 
         final_matrix = self.final_matrix()
-        print_matrix(final_matrix, 'Redundancy adjustments')
+        print_matrix(final_matrix, 'Redundancy adjusted')
 
         robustness = 0
         for p, row in enumerate(final_matrix):
@@ -352,7 +354,7 @@ class AuctionState:
         print()
         print()
 
-        print('Handicap adjustments')
+        print('Handicap adjusted')
         for p, row in enumerate(final_matrix):
             print(f'{self.players[p]:10s}', end=' ')
             for value, price in zip(row, prices):
@@ -378,9 +380,9 @@ class AuctionState:
                         swapped = True
                         # Use name of owner before swap
                         print(f'Swapping {self.players[unit_j.owner]:12s} '
-                              f'{unit_i.name:12s} <-> {unit_j.name:12s} '
+                              f'{(unit_i.name[:12]):12s} <-> {(unit_j.name[:12]):12s} '
                               f'{self.players[unit_i.owner]:12s}, '
-                              f'new score {current_score:6.2f}')
+                              f'new score {current_score:7.3f}')
                     else:  # return units to owners
                         unit_i.set_owner(unit_j.owner)
                         unit_j.set_owner(unit_i.prior_owner)
@@ -418,9 +420,9 @@ class AuctionState:
                     print('\nRotating:')
                     for p2 in trading_players:
                         print(f'{self.players[p2]:12s} -> '
-                              f'{teams[p2][indices[p2]].name:12s} -> '
+                              f'{(teams[p2][indices[p2]].name[:12]):12s} -> '
                               f'{self.players[rotation[p2]]:12s}')
-                    print(f'New score {current_score:6.2f}')
+                    print(f'New score {current_score:7.3f}')
                     print()
 
                     while self.improve_allocation_swaps():
@@ -463,5 +465,5 @@ class AuctionState:
         while test_until >= 0:
             test_until = self.improve_allocation_rotate(test_until)
 
-        self.print_teams()
         self.print_value_matrices()
+        self.print_teams()

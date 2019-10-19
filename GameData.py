@@ -1,3 +1,5 @@
+
+
 promo_KC = 0  # knight crest
 promo_HC = 1  # hero crest
 promo_OB = 2  # orion's bolt
@@ -624,9 +626,3 @@ for unit in units:
                 unit.late_promo_factors[prior_competitors - 1][c] = factor
             else:
                 break  # gained item or already had it, other factors in row remain 1
-
-    # print(unit.name)
-    # for row in unit.late_promo_factors:
-    #     print(row)
-
-
