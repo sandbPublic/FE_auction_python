@@ -17,6 +17,9 @@ class Unit:
         self.name = name
         self.recruit_order = recruit_order
         self.owner = -1
+        self.bids = []
+        # whenever iterating over bids, we also iterate over Units
+        # Simplify loops and save on zips by storing the bids in the Units
 
 
 class AuctionState:
@@ -30,7 +33,6 @@ class AuctionState:
         self.units = []
 
         # index by player last for printing/reading and for consistency
-        self.bids = []  # U x P, indexing for reading files/printing
         self.bid_sums = [0] * len(players)  # P, used for redundancy adjusted team values
 
         self.synergies = []
@@ -58,7 +60,7 @@ class AuctionState:
     def read_bids(self, bid_file_name: str):
         try:
             self.bid_sums = [0] * len(self.players)
-            self.bids = []
+            bids = []
 
             bid_file = open(bid_file_name, 'r')
             for line in bid_file.readlines():
@@ -69,13 +71,16 @@ class AuctionState:
                     while len(next_bid_row) < len(self.players):
                         next_bid_row.append(statistics.median(next_bid_row) * random.triangular(.9, 1.1))
 
-                    self.bids.append(next_bid_row)
+                    bids.append(next_bid_row)
 
                     for i, bid in enumerate(next_bid_row):
                         self.bid_sums[i] += bid
 
             bid_file.close()
-            extend_array(self.bids, len(self.units), [0] * len(self.players))
+            extend_array(bids, len(self.units), [0] * len(self.players))
+
+            for unit, bid_row in zip(self.units, bids):
+                unit.bids = bid_row
 
         except ValueError as error:
             print(error)
@@ -88,9 +93,9 @@ class AuctionState:
             print(f'{player:10s}', end=' ')
         print()
 
-        for bid_row, unit in zip(self.bids, self.units):
+        for unit in self.units:
             unit_line = f'{unit.name:15s}'
-            for bid in bid_row:
+            for bid in unit.bids:
                 unit_line += f' {bid:5.2f}     '
             print(unit_line)
 
@@ -155,9 +160,9 @@ class AuctionState:
 
     def quick_assign(self):
         self.clear_assign()
-        for bid_row, unit in zip(self.bids, self.units):
+        for unit in self.units:
             max_bid = -1
-            for p, bid in enumerate(bid_row):
+            for p, bid in enumerate(unit.bids):
                 if self.team_sizes[p] < self.max_team_size and max_bid < bid:
                     max_bid = bid
                     self.assign_unit(unit, p)
@@ -169,19 +174,19 @@ class AuctionState:
         self.clear_assign()
         while self.team_sizes[-1] > 0:  # unassigned units remain
             max_sat = -999
-            max_sat_unit = -1
+            max_sat_unit = Unit('NULL', -1)
             max_sat_player = -1
-            for u, bid_row in enumerate(self.bids):
-                if self.units[u].owner == -1:
-                    for p, bid in enumerate(bid_row):
-                        sat = Pricing.comp_sat(bid_row, p)
+            for unit in self.units:
+                if unit.owner == -1:
+                    for p, bid in enumerate(unit.bids):
+                        sat = Pricing.comp_sat(unit.bids, p)
                         if self.team_sizes[p] < self.max_team_size and max_sat < sat:
                             max_sat = sat
-                            max_sat_unit = u
+                            max_sat_unit = unit
                             max_sat_player = p
 
-            self.assign_unit(self.units[max_sat_unit], max_sat_player)
-            print(f'{self.units[max_sat_unit].name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
+            self.assign_unit(max_sat_unit, max_sat_player)
+            print(f'{max_sat_unit.name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
 
     # P x S
     def teams(self):
@@ -211,9 +216,9 @@ class AuctionState:
     def value_matrix(self) -> Matrix:
         v_matrix = [([0] * len(self.players)) for player in self.players]
 
-        for valuer_i, valuer_row in enumerate(v_matrix):
-            for unit, bid_row in zip(self.units, self.bids):
-                valuer_row[unit.owner] += bid_row[valuer_i]
+        for unit in self.units:
+            for valuer_row, bid in zip(v_matrix, unit.bids):
+                valuer_row[unit.owner] += bid
 
         return v_matrix
 

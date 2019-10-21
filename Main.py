@@ -15,5 +15,5 @@ def main():
     test.run()
 
 
-# cProfile.run('main()')
-main()
+cProfile.run('main()', sort='cumulative')
+# main()
