@@ -1,31 +1,37 @@
-
-
-import GameData
 import Pricing
 import itertools
 import time
 import statistics
 import random
+from typing import List
+Matrix = List[List[float]]
 
 
-def extend_array(array, length, filler):
+def extend_array(array, length: int, filler) -> None:
     while len(array) < length:
         array.append(filler)
 
 
+class Unit:
+    def __init__(self, name: str, recruit_order: int):
+        self.name = name
+        self.recruit_order = recruit_order
+        self.owner = -1
+
+
 class AuctionState:
-    def __init__(self, players):
+    def __init__(self, players: List[str], robust_factor: float = 0.25):
         self.players = players
-        self.max_team_size = len(GameData.units)//len(players)
+        self.robust_factor = robust_factor  # bias in favor of good teams rather than expected victory
+
+        self.max_team_size = 0
         self.opp_ratio = 1 - 1/len(players)  # used in pricing functions
         self.team_sizes = []  # index -1 for unassigned
+        self.units = []
 
-        self.robust_factor = 0.25  # bias in favor of good teams rather than expected victory
         # index by player last for printing/reading and for consistency
         self.bids = []  # U x P, indexing for reading files/printing
         self.bid_sums = [0] * len(players)  # P, used for redundancy adjusted team values
-        self.MC_matrix = []  # C x P, M values by chapter
-        self.unit_value_per_chapter = []  # U x P, unmodified by promo items
 
         self.synergies = []
         # P x U x U, players choose value to reduce/increase value of unit pairs
@@ -33,11 +39,23 @@ class AuctionState:
         # increment value of team by manual_synergy[i][j][valuer] if i and j on same team
         # should be triangular matrix since synergy i<->j == j<->i
 
-        self.synergy_relationship_graph = [set() for i in range(len(GameData.units))]
-
         self.rotations = [p for p in itertools.permutations(range(len(players))) if Pricing.just_one_loop(p)]
 
-    def read_bids(self, bid_file_name):
+    def read_units(self, unit_file_name: str):
+        try:
+            self.units = []
+
+            unit_file = open(unit_file_name, 'r')
+            for i, name in enumerate(unit_file.readlines()):
+                self.units.append(Unit(name.rstrip(), i))  # remove newline/whitespace at end
+            unit_file.close()
+
+            self.max_team_size = len(self.units)//len(self.players)
+
+        except FileNotFoundError as error:
+            print(error)
+
+    def read_bids(self, bid_file_name: str):
         try:
             self.bid_sums = [0] * len(self.players)
             self.bids = []
@@ -49,7 +67,7 @@ class AuctionState:
                 if len(next_bid_row) > 0:  # skip empty lines
                     # if fewer than max players, create dummy players from existing bids
                     while len(next_bid_row) < len(self.players):
-                        next_bid_row.append(statistics.median(next_bid_row) * random.triangular(1, 1))
+                        next_bid_row.append(statistics.median(next_bid_row) * random.triangular(.9, 1.1))
 
                     self.bids.append(next_bid_row)
 
@@ -57,7 +75,7 @@ class AuctionState:
                         self.bid_sums[i] += bid
 
             bid_file.close()
-            extend_array(self.bids, len(GameData.units), [0] * len(self.players))
+            extend_array(self.bids, len(self.units), [0] * len(self.players))
 
         except ValueError as error:
             print(error)
@@ -70,29 +88,23 @@ class AuctionState:
             print(f'{player:10s}', end=' ')
         print()
 
-        for bid_row, unit in zip(self.bids, GameData.units):
+        for bid_row, unit in zip(self.bids, self.units):
             unit_line = f'{unit.name:15s}'
             for bid in bid_row:
                 unit_line += f' {bid:5.2f}     '
             print(unit_line)
 
-    def read_synergy(self, synergy_file_name):
+    def read_synergy(self, synergy_file_name: str):
         try:
             print(f'Reading synergy values from {synergy_file_name:s}.')
             synergy_file = open(synergy_file_name, 'r')
             player_synergies = []
             for line in synergy_file.readlines():
                 next_line = [float(i) for i in line.split()]
-                extend_array(next_line, len(GameData.units), 0)
+                extend_array(next_line, len(self.units), 0)
                 player_synergies.append(next_line)
 
-            extend_array(player_synergies, len(GameData.units), [0] * len(GameData.units))
-
-            for u_i, synergy_row in enumerate(player_synergies):
-                for u_j, syn in enumerate(synergy_row):
-                    if syn != 0:
-                        self.synergy_relationship_graph[u_i].add(u_j)
-                        self.synergy_relationship_graph[u_j].add(u_i)
+            extend_array(player_synergies, len(self.units), [0] * len(self.units))
 
             self.synergies.append(player_synergies)
             synergy_file.close()
@@ -104,76 +116,46 @@ class AuctionState:
 
     def set_median_synergy(self):
         player_synergies = []
-        for u_i in range(len(GameData.units)):
+        for u_i in range(len(self.units)):
             next_synergy_row = []
-            for u_j in range(len(GameData.units)):
+            for u_j in range(len(self.units)):
                 next_synergy_row.append(statistics.median([synergy[u_i][u_j] for synergy in self.synergies]))
             player_synergies.append(next_synergy_row)
         self.synergies.append(player_synergies)
 
     # checks that populated section of the matrix is triangular
-    def print_synergy(self, player_i):
+    def print_synergy(self, player_i: int):
         print(f'  Synergies for {self.players[player_i]:10s}')
 
-        for u_i in range(len(GameData.units)):
+        for u_i in range(len(self.units)):
             something_to_print = False
-            unit_line = f'{GameData.units[u_i].name:12s}: '
+            unit_line = f'{self.units[u_i].name:12s}: '
             for u_j, synergy in enumerate(self.synergies[player_i][u_i]):
                 if synergy != 0:
                     something_to_print = True
-                    unit_line += f' {GameData.units[u_j].name:12s}{synergy:5.2f} '
+                    unit_line += f' {self.units[u_j].name:12s}{synergy:5.2f} '
                     if u_j <= u_i:
                         print('NOTE, synergy matrix not triangular, possible error')
             if something_to_print:
                 print(unit_line)
 
-    # C x P matrix of each player's max team value on a chapter basis.
-    # Divide each unit's value (bid) evenly across each chapter it is present.
-    # Account for promo item competition reducing values of late promoters.
-    def create_max_chapter_values(self):
-        self.MC_matrix = [[0] * len(self.players) for chapter in GameData.chapters]
-
-        self.unit_value_per_chapter = []
-        for u, unit in enumerate(GameData.units):
-            self.unit_value_per_chapter.append([])
-            for p in range(len(self.players)):
-                uvpc = self.bids[u][p] / (len(GameData.chapters) - unit.join_chapter)
-                self.unit_value_per_chapter[u].append(uvpc)
-                for c in range(unit.join_chapter, len(GameData.chapters)):
-                    if unit.late_promo_factors:
-                        # assume max competition when creating max values
-                        self.MC_matrix[c][p] += uvpc * unit.late_promo_factors[-1][c]
-                    else:
-                        self.MC_matrix[c][p] += uvpc
-
-    def print_max_chapter_values(self):
-        print('\n---Max values by chapter---')
-        for player in self.players:
-            print(f'{player:10s}', end=' ')
-        print()
-
-        for row, chapter in zip(self.MC_matrix, GameData.chapters):
-            for m in row:
-                print(f' {m:6.2f}   ', end=' ')
-            print(chapter)
-
     def clear_assign(self):
         self.team_sizes = [0] * len(self.players)
-        self.team_sizes.append(len(GameData.units))  # all unassigned (team -1)
+        self.team_sizes.append(len(self.units))  # all unassigned (team -1)
 
-        for unit in GameData.units:
+        for unit in self.units:
             unit.owner = -1
 
     # Only need to track team size during initial assignment;
     # afterward all assignment changes maintain team sizes, using blank slots if necessary.
-    def assign_unit(self, unit, new_owner):
-        unit.set_owner(new_owner)
-        self.team_sizes[unit.prior_owner] -= 1
+    def assign_unit(self, unit: Unit, new_owner: int):
+        self.team_sizes[unit.owner] -= 1
+        unit.owner = new_owner
         self.team_sizes[unit.owner] += 1
 
     def quick_assign(self):
         self.clear_assign()
-        for bid_row, unit in zip(self.bids, GameData.units):
+        for bid_row, unit in zip(self.bids, self.units):
             max_bid = -1
             for p, bid in enumerate(bid_row):
                 if self.team_sizes[p] < self.max_team_size and max_bid < bid:
@@ -190,7 +172,7 @@ class AuctionState:
             max_sat_unit = -1
             max_sat_player = -1
             for u, bid_row in enumerate(self.bids):
-                if GameData.units[u].owner == -1:
+                if self.units[u].owner == -1:
                     for p, bid in enumerate(bid_row):
                         sat = Pricing.comp_sat(bid_row, p)
                         if self.team_sizes[p] < self.max_team_size and max_sat < sat:
@@ -198,14 +180,14 @@ class AuctionState:
                             max_sat_unit = u
                             max_sat_player = p
 
-            self.assign_unit(GameData.units[max_sat_unit], max_sat_player)
-            print(f'{GameData.units[max_sat_unit].name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
+            self.assign_unit(self.units[max_sat_unit], max_sat_player)
+            print(f'{self.units[max_sat_unit].name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
 
     # P x S
     def teams(self):
         teams = [[] for player in self.players]
 
-        for unit in GameData.units:
+        for unit in self.units:
             teams[unit.owner].append(unit)
         return teams
 
@@ -225,26 +207,12 @@ class AuctionState:
             print(f'{price:5.2f}       ', end=' ')
         print()
 
-    def print_teams_detailed(self):
-        print('\n---Teams detailed---', end='')
-
-        teams = self.teams()
-        prices = self.handicaps()
-        for team, player, price in zip(teams, self.players, prices):
-            print(f'\n{player}')
-            for member in team:
-                print(f'{member.name:12s} | '
-                      f'{GameData.promo_strings[member.promo_type]} | '
-                      f'{GameData.chapters[member.join_chapter]:30s}')
-            print(f'Handicap: {price:5.2f}')
-        print()
-
     # How player i values player j's team. No adjustments
-    def value_matrix(self):
+    def value_matrix(self) -> Matrix:
         v_matrix = [([0] * len(self.players)) for player in self.players]
 
         for valuer_i, valuer_row in enumerate(v_matrix):
-            for unit, bid_row in zip(GameData.units, self.bids):
+            for unit, bid_row in zip(self.units, self.bids):
                 valuer_row[unit.owner] += bid_row[valuer_i]
 
         return v_matrix
@@ -257,7 +225,7 @@ class AuctionState:
     # the circumstances of having no former or current teammates as connected to any moving unit.
     # If no synergy relationships, much faster on FE6, but cannot conclude any speedup in general.
     # Could also only update rows/columns of affected players, but most time is all-player rotations
-    def synergy_matrix(self):
+    def synergy_matrix(self) -> Matrix:
         s_matrix = [([0] * len(self.players)) for player in self.players]
 
         teams = self.teams()
@@ -265,56 +233,29 @@ class AuctionState:
             for u_j in range((u_i+1), self.max_team_size):
                 for player_i, synergies in enumerate(self.synergies):
                     for player_j, team in enumerate(teams):
-                        s_matrix[player_i][player_j] += synergies[team[u_i].ID][team[u_j].ID]
+                        s_matrix[player_i][player_j] += synergies[team[u_i].recruit_order][team[u_j].recruit_order]
 
         return s_matrix
 
-    def v_s_matrix(self):
+    def v_s_matrix(self) -> Matrix:
         v_matrix = self.value_matrix()
         s_matrix = self.synergy_matrix()
         for v_row, s_row in zip(v_matrix, s_matrix):
             for i in range(len(v_row)):
                 v_row[i] += s_row[i]
-                v_row[i] = max(0, v_row[i])
+                v_row[i] = max(0, v_row[i])  # team value should never be negative
         return v_matrix
 
     # Adjusted for synergy and redundancy
-    def final_matrix(self):
+    def final_matrix(self) -> Matrix:
         return Pricing.apply_redundancy(self.v_s_matrix(), self.bid_sums, self.opp_ratio)
 
     def handicaps(self):
         return Pricing.pareto_prices(self.final_matrix(), self.opp_ratio)
 
-    # Sum of values adjusted for redundancy for each chapter.
-    # Also adjusted for promo competition
-    def value_matrix_by_chapter(self):
-        v_matrix = [([0] * len(self.players)) for player in self.players]
-
-        for unit_c in GameData.units_with_competitors:
-            unit_c.set_current_competitors()
-
-        for c, MC_row in enumerate(self.MC_matrix):
-            for p_i in range(len(self.players)):
-                team_values_this_chapter = [0] * len(self.players)
-
-                for unit, uvpc in zip(GameData.units, self.unit_value_per_chapter):
-                    if unit.join_chapter <= c:
-                        if unit.current_competitors == 0:
-                            team_values_this_chapter[unit.owner] += uvpc[p_i]
-                        else:
-                            team_values_this_chapter[unit.owner] += uvpc[p_i] * unit.get_late_promo_factor(c)
-                    else:  # all subsequent units have not appeared yet
-                        break
-
-                for p_j in range(len(self.players)):
-                    v_matrix[p_i][p_j] += Pricing.redundancy(
-                        team_values_this_chapter[p_j], MC_row[p_i], self.opp_ratio)
-
-        return v_matrix
-
     # Print matrix, comp_sat, handicaps, and matrix+sat after handicapping
     def print_value_matrices(self):
-        def print_matrix(m, string):
+        def print_matrix(m: Matrix, string: str):
             print()
             print(string)
             for p, row in enumerate(m):
@@ -365,15 +306,14 @@ class AuctionState:
         return Pricing.allocation_score(self.final_matrix(), self.robust_factor)
 
     # try all swaps to improve score
-    def improve_allocation_swaps(self):
+    def improve_allocation_swaps(self) -> bool:
         current_score = self.get_score()
         swapped = False
 
-        for u_i, unit_i in enumerate(GameData.units):
-            for unit_j in GameData.units[u_i+1:]:
+        for u_i, unit_i in enumerate(self.units):
+            for unit_j in self.units[u_i+1:]:
                 if unit_i.owner != unit_j.owner:
-                    unit_i.set_owner(unit_j.owner)
-                    unit_j.set_owner(unit_i.prior_owner)
+                    unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
 
                     if current_score < self.get_score():
                         current_score = self.get_score()
@@ -384,8 +324,7 @@ class AuctionState:
                               f'{self.players[unit_i.owner]:12s}, '
                               f'new score {current_score:7.3f}')
                     else:  # return units to owners
-                        unit_i.set_owner(unit_j.owner)
-                        unit_j.set_owner(unit_i.prior_owner)
+                        unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
         return swapped
 
     # try all rotations (swaps of three or more) to improve score
@@ -396,7 +335,7 @@ class AuctionState:
     # If this didn't rotate from rotations[test_until], only need to check until that point:
     # Complete one "lap" without any successful rotation, lap doesn't need to start at rotation[0]
     # Set last_rotation to index r whenever a rotation occurs to pass to next execution.
-    def improve_allocation_rotate(self, test_until):
+    def improve_allocation_rotate(self, test_until: int) -> int:
         start = time.time()
 
         current_score = self.get_score()
@@ -412,7 +351,7 @@ class AuctionState:
 
             if p_i >= len(self.players):  # base case
                 for p in trading_players:
-                    teams[p][indices[p]].set_owner(rotation[p])  # p's unit goes to rotation[p]
+                    teams[p][indices[p]].owner = rotation[p]  # p's unit goes to rotation[p]
 
                 if current_score < self.get_score():
                     current_score = self.get_score()
@@ -433,7 +372,7 @@ class AuctionState:
                     last_rotation = r
                 else:
                     for p in trading_players:
-                        teams[p][indices[p]].set_owner(p)  # unrotate, if teams were updated rotates to new teams
+                        teams[p][indices[p]].owner = p  # unrotate, if teams were updated rotates to new teams
 
             else:
                 if p_i in trading_players:

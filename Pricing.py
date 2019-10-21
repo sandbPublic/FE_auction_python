@@ -1,8 +1,10 @@
+from typing import List
+Matrix = List[List[float]]
 
 
 # Comparative Satisfaction.
 # In a zero-sum game, subtract average opponent's perceived value from own.
-def comp_sat(values, my_i):
+def comp_sat(values: List[float], my_i: int) -> float:
     avg_opp_value = sum(values)
     avg_opp_value -= values[my_i]
     avg_opp_value /= (len(values) - 1)
@@ -19,14 +21,14 @@ def comp_sat(values, my_i):
 # R(0) = 0
 # R(inf) = max_v
 # R(max_v/#players) = max_v/#players; no adjustment for average value
-def redundancy(value, max_v, opp_ratio):
+def redundancy(value: float, max_v: float, opp_ratio: float) -> float:
     try:
         return (value * max_v) / (value + max_v * opp_ratio)
     except ZeroDivisionError:
         return 0
 
 
-def apply_redundancy(value_matrix, max_values, opp_ratio):
+def apply_redundancy(value_matrix: Matrix, max_values: List[float], opp_ratio: float) -> Matrix:
     for i in range(len(value_matrix)):
         for j in range(len(value_matrix)):
             value_matrix[i][j] = redundancy(value_matrix[i][j], max_values[i], opp_ratio)
@@ -36,7 +38,7 @@ def apply_redundancy(value_matrix, max_values, opp_ratio):
 # Finds prices that produce equalized satisfaction.
 # A's satisfaction equals Handicapped Team Value - average opponent's HTV
 # (from A's subjective perspective)
-def pareto_prices(value_matrix, opp_ratio):
+def pareto_prices(value_matrix: Matrix, opp_ratio: float) -> List[float]:
     sat_values = [comp_sat(row, i) for i, row in enumerate(value_matrix)]
     return [(value - min(sat_values))*opp_ratio for value in sat_values]
 
@@ -50,7 +52,7 @@ def pareto_prices(value_matrix, opp_ratio):
 # Testing with different values shows that 1/8 has very little effect,
 # values around 1 have large effect and produce close to equal team self assessment
 # Seems to have low cost to satisfaction?
-def allocation_score(value_matrix, robust_factor):
+def allocation_score(value_matrix: Matrix, robust_factor: float) -> float:
     score = 0
     for i, row in enumerate(value_matrix):
         score += comp_sat(row, i) + row[i]*robust_factor
@@ -62,7 +64,7 @@ def allocation_score(value_matrix, robust_factor):
 # want to test it. If there is more than one loop,
 # we don't need to test it because we already tested
 # the loops individually
-def just_one_loop(permutation):
+def just_one_loop(permutation: List[int]) -> bool:
     players_trading = 0
     highest_trading_player = 0
     for index, item in enumerate(permutation):
