@@ -28,7 +28,8 @@ def redundancy(value: float, max_v: float, opp_ratio: float) -> float:
         return 0
 
 
-def apply_redundancy(value_matrix: Matrix, max_values: List[float], opp_ratio: float) -> Matrix:
+def apply_redundancy(value_matrix: Matrix, max_values: List[float]) -> Matrix:
+    opp_ratio = 1-1/len(value_matrix)
     for i in range(len(value_matrix)):
         for j in range(len(value_matrix)):
             value_matrix[i][j] = redundancy(value_matrix[i][j], max_values[i], opp_ratio)
@@ -38,7 +39,8 @@ def apply_redundancy(value_matrix: Matrix, max_values: List[float], opp_ratio: f
 # Finds prices that produce equalized satisfaction.
 # A's satisfaction equals Handicapped Team Value - average opponent's HTV
 # (from A's subjective perspective)
-def pareto_prices(value_matrix: Matrix, opp_ratio: float) -> List[float]:
+def pareto_prices(value_matrix: Matrix) -> List[float]:
+    opp_ratio = 1-1/len(value_matrix)
     sat_values = [comp_sat(row, i) for i, row in enumerate(value_matrix)]
     return [(value - min(sat_values))*opp_ratio for value in sat_values]
 

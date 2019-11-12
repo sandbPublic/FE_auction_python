@@ -28,7 +28,6 @@ class AuctionState:
         self.robust_factor = robust_factor  # bias in favor of good teams rather than expected victory
 
         self.max_team_size = 0
-        self.opp_ratio = 1 - 1/len(players)  # used in pricing functions
         self.team_sizes = []  # index -1 for unassigned
         self.units = []
 
@@ -45,47 +44,48 @@ class AuctionState:
 
     def read_units(self, unit_file_name: str):
         try:
-            self.units = []
-
             unit_file = open(unit_file_name, 'r')
+        except FileNotFoundError as error:
+            print(error)
+        else:
+            self.units = []
             for i, name in enumerate(unit_file.readlines()):
                 self.units.append(Unit(name.rstrip(), i))  # remove newline/whitespace at end
             unit_file.close()
 
             self.max_team_size = len(self.units)//len(self.players)
 
-        except FileNotFoundError as error:
-            print(error)
-
     def read_bids(self, bid_file_name: str):
         try:
+            bid_file = open(bid_file_name, 'r')
+        except FileNotFoundError as error:
+            print(error)
+        else:
             self.bid_sums = [0] * len(self.players)
             bids = []
 
-            bid_file = open(bid_file_name, 'r')
             for line in bid_file.readlines():
-                next_bid_row = [float(i) for i in line.split()]
+                try:
+                    next_bid_row = [float(i) for i in line.split()]
+                except ValueError as error:
+                    bids.append([0] * len(self.players))
+                    print(error)
+                else:
+                    if len(next_bid_row) > 0:  # skip empty lines
+                        # if fewer than max players, create dummy players from existing bids
+                        while len(next_bid_row) < len(self.players):
+                            next_bid_row.append(statistics.median(next_bid_row) * random.triangular(.9, 1.1))
 
-                if len(next_bid_row) > 0:  # skip empty lines
-                    # if fewer than max players, create dummy players from existing bids
-                    while len(next_bid_row) < len(self.players):
-                        next_bid_row.append(statistics.median(next_bid_row) * random.triangular(.9, 1.1))
+                        bids.append(next_bid_row)
 
-                    bids.append(next_bid_row)
-
-                    for i, bid in enumerate(next_bid_row):
-                        self.bid_sums[i] += bid
+                        for i, bid in enumerate(next_bid_row):
+                            self.bid_sums[i] += bid
 
             bid_file.close()
             extend_array(bids, len(self.units), [0] * len(self.players))
 
             for unit, bid_row in zip(self.units, bids):
                 unit.bids = bid_row
-
-        except ValueError as error:
-            print(error)
-        except FileNotFoundError as error:
-            print(error)
 
     def print_bids(self):
         print('--BIDS--       ', end=' ')
@@ -101,23 +101,27 @@ class AuctionState:
 
     def read_synergy(self, synergy_file_name: str):
         try:
-            print(f'Reading synergy values from {synergy_file_name:s}.')
             synergy_file = open(synergy_file_name, 'r')
+        except FileNotFoundError as error:
+            print(error)
+        else:
+            print(f'Reading synergy values from {synergy_file_name:s}.')
+
             player_synergies = []
             for line in synergy_file.readlines():
-                next_line = [float(i) for i in line.split()]
-                extend_array(next_line, len(self.units), 0)
-                player_synergies.append(next_line)
+                try:
+                    next_line = [float(i) for i in line.split()]
+                except ValueError as error:
+                    player_synergies.append([0] * len(self.units))
+                    print(error)
+                else:
+                    extend_array(next_line, len(self.units), 0)
+                    player_synergies.append(next_line)
 
             extend_array(player_synergies, len(self.units), [0] * len(self.units))
 
             self.synergies.append(player_synergies)
             synergy_file.close()
-
-        except ValueError as error:
-            print(error)
-        except FileNotFoundError as error:
-            print(error)
 
     def set_median_synergy(self):
         player_synergies = []
@@ -248,15 +252,15 @@ class AuctionState:
         for v_row, s_row in zip(v_matrix, s_matrix):
             for i in range(len(v_row)):
                 v_row[i] += s_row[i]
-                v_row[i] = max(0, v_row[i])  # team value should never be negative
+                v_row[i] = max(0.0, v_row[i])  # team value should never be negative
         return v_matrix
 
     # Adjusted for synergy and redundancy
     def final_matrix(self) -> Matrix:
-        return Pricing.apply_redundancy(self.v_s_matrix(), self.bid_sums, self.opp_ratio)
+        return Pricing.apply_redundancy(self.v_s_matrix(), self.bid_sums)
 
-    def handicaps(self):
-        return Pricing.pareto_prices(self.final_matrix(), self.opp_ratio)
+    def handicaps(self) -> List[float]:
+        return Pricing.pareto_prices(self.final_matrix())
 
     # Print matrix, comp_sat, handicaps, and matrix+sat after handicapping
     def print_value_matrices(self):
