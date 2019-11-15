@@ -117,11 +117,11 @@ class AuctionState:
                 else:
                     extend_array(next_line, len(self.units), 0)
                     player_synergies.append(next_line)
+            synergy_file.close()
 
             extend_array(player_synergies, len(self.units), [0] * len(self.units))
 
             self.synergies.append(player_synergies)
-            synergy_file.close()
 
     def set_median_synergy(self):
         player_synergies = []
