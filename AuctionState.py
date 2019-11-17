@@ -357,12 +357,14 @@ class AuctionState:
         return last_rotation
 
     def run(self):
-        self.players = read_grid('FE8/auction3/players.txt', str)[0]
+        directories = [_[0] for _ in read_grid('directories.txt', str)]
+
+        self.players = read_grid(directories[0], str)[0]
         self.rotations = [p for p in itertools.permutations(range(len(self.players))) if pricing.just_one_loop(p)]
 
-        self.units = [Unit(row[0], i) for i, row in enumerate(read_grid('FE8/units.txt', str))]
+        self.units = [Unit(row[0], i) for i, row in enumerate(read_grid(directories[1], str))]
 
-        bids = read_grid('FE8/auction3/bids.txt', float)
+        bids = read_grid(directories[2], float)
         extend_array(bids, len(self.units), [0] * len(self.players))
 
         self.bid_sums = [0] * len(self.players)
@@ -377,11 +379,12 @@ class AuctionState:
             unit.bids = bid_row
 
         self.synergies = []
-        synergies = read_grid('FE8/auction3/synergyA.txt', float)
-        extend_array(synergies, len(self.units), [0] * len(self.units))
-        for row in synergies:
-            extend_array(row, len(self.units), 0)
-        self.synergies.append(synergies)
+        for filename in directories[3:]:
+            synergies = read_grid(filename, float)
+            extend_array(synergies, len(self.units), [0] * len(self.units))
+            for row in synergies:
+                extend_array(row, len(self.units), 0)
+            self.synergies.append(synergies)
 
         while len(self.synergies) < len(self.players):
             self.set_median_synergy()

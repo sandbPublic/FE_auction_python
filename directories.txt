@@ -1,0 +1,4 @@
+FE8/auction3/players.txt
+FE8/units.txt
+FE8/auction3/bids.txt
+FE8/auction3/synergyA.txt
