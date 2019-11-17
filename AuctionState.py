@@ -2,7 +2,7 @@ import pricing
 import misc
 import statistics
 import random
-import cProfile
+# import cProfile
 from typing import List
 Matrix = List[List[float]]
 
@@ -126,9 +126,8 @@ class AuctionState:
             self.team_sizes[max_sat_unit.owner] += 1
             print(f'{max_sat_unit.name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
 
-    # P x S
-    def teams(self):
-        teams = [[] for player in self.players]
+    def teams(self) -> List[List[Unit]]:
+        teams = [[] for _ in self.players]
 
         for unit in self.units:
             teams[unit.owner].append(unit)
@@ -152,7 +151,7 @@ class AuctionState:
 
     # How player i values player j's team. No adjustments
     def value_matrix(self) -> Matrix:
-        v_matrix = [([0] * len(self.players)) for player in self.players]
+        v_matrix = [([0] * len(self.players)) for _ in self.players]
 
         for unit in self.units:
             for valuer_row, bid in zip(v_matrix, unit.bids):
@@ -169,7 +168,7 @@ class AuctionState:
     # If no synergy relationships, much faster on FE6, but cannot conclude any speedup in general.
     # Could also only update rows/columns of affected players, but most time is all-player rotations
     def synergy_matrix(self) -> Matrix:
-        s_matrix = [([0] * len(self.players)) for player in self.players]
+        s_matrix = [([0] * len(self.players)) for _ in self.players]
 
         teams = self.teams()
         for u_i in range(self.max_team_size):
@@ -214,11 +213,8 @@ class AuctionState:
         print('Comparative satisfaction')
 
         print_matrix(self.value_matrix(), 'Unadjusted value matrix')
-
         print_matrix(self.synergy_matrix(), 'Synergy')
-
         print_matrix(self.v_s_matrix(), 'Synergy adjusted')
-
         final_matrix = self.final_matrix()
         print_matrix(final_matrix, 'Redundancy adjusted')
 
@@ -334,7 +330,7 @@ class AuctionState:
         return last_rotation
 
     def run(self):
-        directories = [_[0] for _ in misc.read_grid('directories.txt', str)]
+        directories = [d[0] for d in misc.read_grid('directories.txt', str)]
 
         self.players = misc.read_grid(directories[0], str)[0]
         self.rotations = misc.one_loop_permutations(len(self.players))
@@ -343,16 +339,13 @@ class AuctionState:
 
         bids = misc.read_grid(directories[2], float)
         misc.extend_array(bids, len(self.units), [0] * len(self.players))
-
         self.bid_sums = [0] * len(self.players)
         for unit, bid_row in zip(self.units, bids):
             # if fewer than max players, create dummy players from existing bids
             while len(bid_row) < len(self.players):
                 bid_row.append(statistics.median(bid_row) * random.triangular(.9, 1.1))
-
             for i, bid in enumerate(bid_row):
                 self.bid_sums[i] += bid
-
             unit.bids = bid_row
 
         self.synergies = []
@@ -362,6 +355,7 @@ class AuctionState:
             for row in synergies:
                 misc.extend_array(row, len(self.units), 0)
             self.synergies.append(synergies)
+            self.print_synergy(len(self.synergies) - 1)
 
         while len(self.synergies) < len(self.players):
             self.set_median_synergy()
@@ -373,7 +367,6 @@ class AuctionState:
 
         self.max_team_size = len(self.units)//len(self.players)
         self.max_sat_assign()
-        self.print_synergy(0)
 
         while self.improve_allocation_swaps():
             pass
