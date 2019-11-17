@@ -1,37 +1,10 @@
 import pricing
-import itertools
-import time
+import misc
 import statistics
 import random
 import cProfile
 from typing import List
 Matrix = List[List[float]]
-
-
-def extend_array(array, length: int, filler) -> None:
-    while len(array) < length:
-        array.append(filler)
-
-
-# reads a file as a grid of values of a specific type
-def read_grid(filename: str, grid_type: type = str) -> List[List]:
-    try:
-        file = open(filename, 'r')
-    except FileNotFoundError as error:
-        print(error)
-    else:
-        grid = []
-        for line in file.readlines():
-            try:
-                next_row = [grid_type(i) for i in line.split()]
-            except ValueError as error:
-                print('reading ', filename)
-                print(error)
-            else:
-                if len(next_row) > 0:  # skip empty rows
-                    grid.append(next_row)
-        file.close()
-        return grid
 
 
 class Unit:
@@ -66,6 +39,7 @@ class AuctionState:
         # should be triangular matrix since synergy i<->j == j<->i
 
     def print_bids(self):
+        print()
         print('--BIDS--       ', end=' ')
         for player in self.players:
             print(f'{player:10s}', end=' ')
@@ -78,6 +52,7 @@ class AuctionState:
             print(unit_line)
 
     def set_median_synergy(self):
+        print(f'Setting median synergies for {self.players[len(self.synergies)]}')
         player_synergies = []
         for u_i in range(len(self.units)):
             next_synergy_row = []
@@ -88,7 +63,8 @@ class AuctionState:
 
     # checks that populated section of the matrix is triangular
     def print_synergy(self, player_i: int):
-        print(f'  Synergies for {self.players[player_i]:10s}')
+        print()
+        print(f'  Synergies for {self.players[player_i]}')
 
         for u_i in range(len(self.units)):
             something_to_print = False
@@ -102,6 +78,24 @@ class AuctionState:
             if something_to_print:
                 print(unit_line)
 
+    def remove_least_valued_unit(self):
+        least_value = 99999
+        least_value_i = -1
+        for unit in self.units:
+            if least_value > sum(unit.bids):
+                least_value = sum(unit.bids)
+                least_value_i = unit.recruit_order
+
+        for unit in self.units[least_value_i:]:
+            unit.recruit_order -= 1
+
+        print(f'Removing least valued: {self.units[least_value_i].name} {least_value/len(self.players)}')
+        self.units.pop(least_value_i)
+        for player_synergy in self.synergies:
+            player_synergy.pop(least_value_i)
+            for row in player_synergy:
+                row.pop(least_value_i)
+
     def clear_assign(self):
         self.team_sizes = [0] * len(self.players)
         self.team_sizes.append(len(self.units))  # all unassigned (team -1)
@@ -109,29 +103,13 @@ class AuctionState:
         for unit in self.units:
             unit.owner = -1
 
-    # Only need to track team size during initial assignment;
-    # afterward all assignment changes maintain team sizes, using blank slots if necessary.
-    def assign_unit(self, unit: Unit, new_owner: int):
-        self.team_sizes[unit.owner] -= 1
-        unit.owner = new_owner
-        self.team_sizes[unit.owner] += 1
-
-    def quick_assign(self):
-        self.clear_assign()
-        for unit in self.units:
-            max_bid = -1
-            for p, bid in enumerate(unit.bids):
-                if self.team_sizes[p] < self.max_team_size and max_bid < bid:
-                    max_bid = bid
-                    self.assign_unit(unit, p)
-
     # assign units in order of satisfaction, not recruitment
     def max_sat_assign(self):
         print()
         print('---Initial assignments---')
         self.clear_assign()
         while self.team_sizes[-1] > 0:  # unassigned units remain
-            max_sat = -999
+            max_sat = -99999
             max_sat_unit = Unit('NULL', -1)
             max_sat_player = -1
             for unit in self.units:
@@ -143,7 +121,9 @@ class AuctionState:
                             max_sat_unit = unit
                             max_sat_player = p
 
-            self.assign_unit(max_sat_unit, max_sat_player)
+            self.team_sizes[max_sat_unit.owner] -= 1
+            max_sat_unit.owner = max_sat_player
+            self.team_sizes[max_sat_unit.owner] += 1
             print(f'{max_sat_unit.name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
 
     # P x S
@@ -299,8 +279,6 @@ class AuctionState:
     # Complete one "lap" without any successful rotation, lap doesn't need to start at rotation[0]
     # Set last_rotation to index r whenever a rotation occurs to pass to next execution.
     def improve_allocation_rotate(self, test_until: int) -> int:
-        start = time.time()
-
         current_score = self.get_score()
         last_rotation = -1
 
@@ -350,22 +328,21 @@ class AuctionState:
                 return last_rotation
 
             trading_players = [p for p, r in enumerate(rotation) if p != r]
-            print(f'{time.time() - start:7.2f} {r:3d}/{len(self.rotations):3d}  '
-                  'Rotation ', rotation, '  Trading players ', trading_players)
+            print(f'{r:3d}/{len(self.rotations):3d}  Rotation ', rotation, '  Trading players ', trading_players)
             recursive_rotate(0)
 
         return last_rotation
 
     def run(self):
-        directories = [_[0] for _ in read_grid('directories.txt', str)]
+        directories = [_[0] for _ in misc.read_grid('directories.txt', str)]
 
-        self.players = read_grid(directories[0], str)[0]
-        self.rotations = [p for p in itertools.permutations(range(len(self.players))) if pricing.just_one_loop(p)]
+        self.players = misc.read_grid(directories[0], str)[0]
+        self.rotations = misc.one_loop_permutations(len(self.players))
 
-        self.units = [Unit(row[0], i) for i, row in enumerate(read_grid(directories[1], str))]
+        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(directories[1], str))]
 
-        bids = read_grid(directories[2], float)
-        extend_array(bids, len(self.units), [0] * len(self.players))
+        bids = misc.read_grid(directories[2], float)
+        misc.extend_array(bids, len(self.units), [0] * len(self.players))
 
         self.bid_sums = [0] * len(self.players)
         for unit, bid_row in zip(self.units, bids):
@@ -380,20 +357,22 @@ class AuctionState:
 
         self.synergies = []
         for filename in directories[3:]:
-            synergies = read_grid(filename, float)
-            extend_array(synergies, len(self.units), [0] * len(self.units))
+            synergies = misc.read_grid(filename, float)
+            misc.extend_array(synergies, len(self.units), [0] * len(self.units))
             for row in synergies:
-                extend_array(row, len(self.units), 0)
+                misc.extend_array(row, len(self.units), 0)
             self.synergies.append(synergies)
 
         while len(self.synergies) < len(self.players):
             self.set_median_synergy()
 
-        # TODO remove least valued units until len(units) % len(players) == 0
+        self.print_bids()
+
+        while len(self.units) % len(self.players) != 0:
+            self.remove_least_valued_unit()
 
         self.max_team_size = len(self.units)//len(self.players)
         self.max_sat_assign()
-        self.print_bids()
         self.print_synergy(0)
 
         while self.improve_allocation_swaps():
