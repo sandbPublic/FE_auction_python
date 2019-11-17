@@ -1,8 +1,9 @@
-import Pricing
+import pricing
 import itertools
 import time
 import statistics
 import random
+import cProfile
 from typing import List
 Matrix = List[List[float]]
 
@@ -10,6 +11,27 @@ Matrix = List[List[float]]
 def extend_array(array, length: int, filler) -> None:
     while len(array) < length:
         array.append(filler)
+
+
+# reads a file as a grid of values of a specific type
+def read_grid(filename: str, grid_type: type = str) -> List[List]:
+    try:
+        file = open(filename, 'r')
+    except FileNotFoundError as error:
+        print(error)
+    else:
+        grid = []
+        for line in file.readlines():
+            try:
+                next_row = [grid_type(i) for i in line.split()]
+            except ValueError as error:
+                print('reading ', filename)
+                print(error)
+            else:
+                if len(next_row) > 0:  # skip empty rows
+                    grid.append(next_row)
+        file.close()
+        return grid
 
 
 class Unit:
@@ -23,69 +45,25 @@ class Unit:
 
 
 class AuctionState:
-    def __init__(self, players: List[str], robust_factor: float = 0.25):
-        self.players = players
+    def __init__(self, robust_factor: float = 0.25):
         self.robust_factor = robust_factor  # bias in favor of good teams rather than expected victory
+        self.rotations = []
+
+        self.players = []
+        self.units = []
 
         self.max_team_size = 0
         self.team_sizes = []  # index -1 for unassigned
-        self.units = []
 
         # index by player last for printing/reading and for consistency
-        self.bid_sums = [0] * len(players)  # P, used for redundancy adjusted team values
+        # used for redundancy adjusted team values
+        self.bid_sums = []
 
         self.synergies = []
         # P x U x U, players choose value to reduce/increase value of unit pairs
         # generally negative for redundant units
         # increment value of team by manual_synergy[i][j][valuer] if i and j on same team
         # should be triangular matrix since synergy i<->j == j<->i
-
-        self.rotations = [p for p in itertools.permutations(range(len(players))) if Pricing.just_one_loop(p)]
-
-    def read_units(self, unit_file_name: str):
-        try:
-            unit_file = open(unit_file_name, 'r')
-        except FileNotFoundError as error:
-            print(error)
-        else:
-            self.units = []
-            for i, name in enumerate(unit_file.readlines()):
-                self.units.append(Unit(name.rstrip(), i))  # remove newline/whitespace at end
-            unit_file.close()
-
-            self.max_team_size = len(self.units)//len(self.players)
-
-    def read_bids(self, bid_file_name: str):
-        try:
-            bid_file = open(bid_file_name, 'r')
-        except FileNotFoundError as error:
-            print(error)
-        else:
-            self.bid_sums = [0] * len(self.players)
-            bids = []
-
-            for line in bid_file.readlines():
-                try:
-                    next_bid_row = [float(i) for i in line.split()]
-                except ValueError as error:
-                    bids.append([0] * len(self.players))
-                    print(error)
-                else:
-                    if len(next_bid_row) > 0:  # skip empty lines
-                        # if fewer than max players, create dummy players from existing bids
-                        while len(next_bid_row) < len(self.players):
-                            next_bid_row.append(statistics.median(next_bid_row) * random.triangular(.9, 1.1))
-
-                        bids.append(next_bid_row)
-
-                        for i, bid in enumerate(next_bid_row):
-                            self.bid_sums[i] += bid
-
-            bid_file.close()
-            extend_array(bids, len(self.units), [0] * len(self.players))
-
-            for unit, bid_row in zip(self.units, bids):
-                unit.bids = bid_row
 
     def print_bids(self):
         print('--BIDS--       ', end=' ')
@@ -98,30 +76,6 @@ class AuctionState:
             for bid in unit.bids:
                 unit_line += f' {bid:5.2f}     '
             print(unit_line)
-
-    def read_synergy(self, synergy_file_name: str):
-        try:
-            synergy_file = open(synergy_file_name, 'r')
-        except FileNotFoundError as error:
-            print(error)
-        else:
-            print(f'Reading synergy values from {synergy_file_name:s}.')
-
-            player_synergies = []
-            for line in synergy_file.readlines():
-                try:
-                    next_line = [float(i) for i in line.split()]
-                except ValueError as error:
-                    player_synergies.append([0] * len(self.units))
-                    print(error)
-                else:
-                    extend_array(next_line, len(self.units), 0)
-                    player_synergies.append(next_line)
-            synergy_file.close()
-
-            extend_array(player_synergies, len(self.units), [0] * len(self.units))
-
-            self.synergies.append(player_synergies)
 
     def set_median_synergy(self):
         player_synergies = []
@@ -183,7 +137,7 @@ class AuctionState:
             for unit in self.units:
                 if unit.owner == -1:
                     for p, bid in enumerate(unit.bids):
-                        sat = Pricing.comp_sat(unit.bids, p)
+                        sat = pricing.comp_sat(unit.bids, p)
                         if self.team_sizes[p] < self.max_team_size and max_sat < sat:
                             max_sat = sat
                             max_sat_unit = unit
@@ -257,10 +211,10 @@ class AuctionState:
 
     # Adjusted for synergy and redundancy
     def final_matrix(self) -> Matrix:
-        return Pricing.apply_redundancy(self.v_s_matrix(), self.bid_sums)
+        return pricing.apply_redundancy(self.v_s_matrix(), self.bid_sums)
 
     def handicaps(self) -> List[float]:
-        return Pricing.pareto_prices(self.final_matrix())
+        return pricing.pareto_prices(self.final_matrix())
 
     # Print matrix, comp_sat, handicaps, and matrix+sat after handicapping
     def print_value_matrices(self):
@@ -271,7 +225,7 @@ class AuctionState:
                 print(f'{self.players[p]:10s}', end=' ')
                 for i, value in enumerate(row):
                     print(f' {value:6.2f}   ', end=' ')
-                print(f' {Pricing.comp_sat(row, p):6.2f}')
+                print(f' {pricing.comp_sat(row, p):6.2f}')
 
         print()
         print('          ', end=' ')
@@ -309,10 +263,10 @@ class AuctionState:
             print(f'{self.players[p]:10s}', end=' ')
             for value, price in zip(row, prices):
                 print(f' {value - price:6.2f}   ', end=' ')
-            print(f' {Pricing.comp_sat(row, p) - Pricing.comp_sat(prices, p):6.2f}')
+            print(f' {pricing.comp_sat(row, p) - pricing.comp_sat(prices, p):6.2f}')
 
     def get_score(self):
-        return Pricing.allocation_score(self.final_matrix(), self.robust_factor)
+        return pricing.allocation_score(self.final_matrix(), self.robust_factor)
 
     # try all swaps to improve score
     def improve_allocation_swaps(self) -> bool:
@@ -403,8 +357,41 @@ class AuctionState:
         return last_rotation
 
     def run(self):
-        self.print_bids()
+        self.players = read_grid('FE8/auction3/players.txt', str)[0]
+        self.rotations = [p for p in itertools.permutations(range(len(self.players))) if pricing.just_one_loop(p)]
+
+        self.units = [Unit(row[0], i) for i, row in enumerate(read_grid('FE8/units.txt', str))]
+
+        bids = read_grid('FE8/auction3/bids.txt', float)
+        extend_array(bids, len(self.units), [0] * len(self.players))
+
+        self.bid_sums = [0] * len(self.players)
+        for unit, bid_row in zip(self.units, bids):
+            # if fewer than max players, create dummy players from existing bids
+            while len(bid_row) < len(self.players):
+                bid_row.append(statistics.median(bid_row) * random.triangular(.9, 1.1))
+
+            for i, bid in enumerate(bid_row):
+                self.bid_sums[i] += bid
+
+            unit.bids = bid_row
+
+        self.synergies = []
+        synergies = read_grid('FE8/auction3/synergyA.txt', float)
+        extend_array(synergies, len(self.units), [0] * len(self.units))
+        for row in synergies:
+            extend_array(row, len(self.units), 0)
+        self.synergies.append(synergies)
+
+        while len(self.synergies) < len(self.players):
+            self.set_median_synergy()
+
+        # TODO remove least valued units until len(units) % len(players) == 0
+
+        self.max_team_size = len(self.units)//len(self.players)
         self.max_sat_assign()
+        self.print_bids()
+        self.print_synergy(0)
 
         while self.improve_allocation_swaps():
             pass
@@ -415,3 +402,9 @@ class AuctionState:
 
         self.print_value_matrices()
         self.print_teams()
+
+
+test = AuctionState()
+
+# cProfile.run('test.run()', sort='cumulative')
+test.run()
