@@ -4,6 +4,7 @@ import statistics
 import random
 # import cProfile
 from typing import List, Tuple
+import os
 Matrix = List[List[float]]
 
 
@@ -26,7 +27,6 @@ class AuctionState:
 
         # index by player last for printing/reading and for consistency
         # used for redundancy adjusted team values
-
         self.bid_sums = []
 
         self.synergies = []
@@ -35,19 +35,27 @@ class AuctionState:
         # increment value of team by manual_synergy[i][j][valuer] if i and j on same team
         # should be triangular matrix since synergy i<->j == j<->i
 
-    # todo change print functions to return lists of strings to allow for writing to file as well as printing
-    def print_bids(self):
-        print()
-        print('--BIDS--       ', end=' ')
-        for player in self.players:
-            print(f'{player:10s}', end=' ')
-        print()
+        self.auct_dir = ''
+        self.log_strings = []
+        self.logs_written = 0
 
+    # need to print as the auction runs, not just when a log is ready for the next output file
+    def print_and_log(self, text: str):
+        print(text)
+        self.log_strings.append(text)
+
+    def write_logs(self, filename: str):
+        print()
+        file = open(f'{self.auct_dir}output/{self.logs_written:02d}_{filename}.txt', 'w')
+        file.write('\n'.join(self.log_strings))
+        file.close()
+        self.log_strings = []
+        self.logs_written += 1
+    
+    def format_bids(self):
+        self.print_and_log('--BIDS--        ' + ' '.join([f'{player:10s}' for player in self.players]))
         for unit in self.units:
-            unit_line = f'{unit.name:15s}'
-            for bid in unit.bids:
-                unit_line += f' {bid:5.2f}     '
-            print(unit_line)
+            self.print_and_log(f'{unit.name:15s}' + ' '.join([f' {bid:5.2f}    ' for bid in unit.bids]))
 
     def set_median_synergy(self):
         print(f'Setting median synergies for {self.players[len(self.synergies)]}')
@@ -60,9 +68,8 @@ class AuctionState:
         self.synergies.append(player_synergies)
 
     # checks that populated section of the matrix is triangular
-    def print_synergy(self, player_i: int):
-        print()
-        print(f'  Synergies for {self.players[player_i]}')
+    def format_synergy(self, player_i: int):
+        self.print_and_log(f'  Synergies for {self.players[player_i]}')
 
         for u_i in range(len(self.units)):
             something_to_print = False
@@ -72,9 +79,9 @@ class AuctionState:
                     something_to_print = True
                     unit_line += f' {self.units[u_j].name:12s}{synergy:5.2f} '
                     if u_j <= u_i:
-                        print('NOTE, synergy matrix not triangular, possible error')
+                        self.print_and_log('NOTE, synergy matrix not triangular, possible error')
             if something_to_print:
-                print(unit_line)
+                self.print_and_log(unit_line)
 
     def remove_least_valued_unit(self):
         least_value = 99999
@@ -87,7 +94,7 @@ class AuctionState:
         for unit in self.units[least_value_i:]:
             unit.recruit_order -= 1
 
-        print(f'Removing least valued: {self.units[least_value_i].name} {least_value/len(self.players)}')
+        self.print_and_log(f'Removing least valued: {self.units[least_value_i].name} {least_value/len(self.players)}')
         self.units.pop(least_value_i)
         for player_synergy in self.synergies:
             player_synergy.pop(least_value_i)
@@ -95,9 +102,8 @@ class AuctionState:
                 row.pop(least_value_i)
 
     # assign units in order of satisfaction, not recruitment
-    def max_sat_assign(self):
-        print()
-        print('---Initial assignments---')
+    def format_initial_assign(self):
+        self.print_and_log('---Initial assignments---')
 
         team_sizes = [0] * len(self.players)
         team_sizes.append(len(self.units))  # all unassigned (team -1)
@@ -121,7 +127,7 @@ class AuctionState:
             team_sizes[max_sat_unit.owner] -= 1
             max_sat_unit.owner = max_sat_player
             team_sizes[max_sat_unit.owner] += 1
-            print(f'{max_sat_unit.name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
+            self.print_and_log(f'{max_sat_unit.name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
 
     def teams(self) -> List[List[Unit]]:
         teams = [[] for _ in self.players]
@@ -130,21 +136,15 @@ class AuctionState:
             teams[unit.owner].append(unit)
         return teams
 
-    def print_teams(self):
-        print('\n---Teams---')
-        for player in self.players:
-            print(f'{player:12s}', end=' ')
-        print()
+    def format_teams(self):
+        self.print_and_log('---Teams---')
+        self.print_and_log(' '.join([f'{player:12s}' for player in self.players]))
 
         teams = self.teams()
         for i in range(self.max_team_size):
-            for team in teams:
-                print(f'{(team[i].name[:12]):12s}', end=' ')
-            print()
+            self.print_and_log(' '.join([f'{(team[i].name[:12]):12s}' for team in teams]))
 
-        for price in self.handicaps():
-            print(f'{price:5.2f}       ', end=' ')
-        print()
+        self.print_and_log(' '.join([f'{price:5.2f}       ' for price in self.handicaps()]))
 
     # How player i values player j's team. No adjustments
     def value_matrix(self) -> Matrix:
@@ -193,21 +193,18 @@ class AuctionState:
         return pricing.pareto_prices(self.final_matrix())
 
     # Print matrix, comp_sat, handicaps, and matrix+sat after handicapping
-    def print_value_matrices(self):
-        def print_matrix(m: Matrix, string: str):
-            print()
-            print(string)
-            for p, row in enumerate(m):
-                print(f'{self.players[p]:10s}', end=' ')
-                for i, value in enumerate(row):
-                    print(f' {value:6.2f}   ', end=' ')
-                print(f' {pricing.comp_sat(row, p):6.2f}')
+    def format_value_matrices(self):
+        self.print_and_log('           ' +
+                           ' '.join([f'{player:10s}' for player in self.players]) +
+                           ' Comparative satisfaction')
 
-        print()
-        print('          ', end=' ')
-        for player in self.players:
-            print(f'{player:10s}', end=' ')
-        print('Comparative satisfaction')
+        def print_matrix(mat: Matrix, string: str):
+            self.print_and_log('')
+            self.print_and_log(string)
+            for p, row in enumerate(mat):
+                self.print_and_log(f'{self.players[p]:10s} ' +
+                                   ' '.join([f' {value:6.2f}   ' for value in row]) +
+                                   f'  {pricing.comp_sat(row, p):6.2f}')
 
         print_matrix(self.value_matrix(), 'Unadjusted value matrix')
         print_matrix(self.synergy_matrix(), 'Synergy')
@@ -221,22 +218,19 @@ class AuctionState:
                 if p == i:
                     robustness += value
 
-        print()
-        print(f'Average team robustness: {robustness/len(self.players):6.2f}')
+        self.print_and_log('')
+        self.print_and_log(f'Average team robustness: {robustness/len(self.players):6.2f}')
 
-        print('HANDICAPS:', end=' ')
         prices = self.handicaps()
-        for price in prices:
-            print(f' {price:6.2f}   ', end=' ')
-        print()
-        print()
 
-        print('Handicap adjusted')
+        self.print_and_log('HANDICAPS: ' + ' '.join([f' {price:6.2f}   ' for price in prices]))
+        self.print_and_log('')
+
+        self.print_and_log('Handicap adjusted')
         for p, row in enumerate(final_matrix):
-            print(f'{self.players[p]:10s}', end=' ')
-            for value, price in zip(row, prices):
-                print(f' {value - price:6.2f}   ', end=' ')
-            print(f' {pricing.comp_sat(row, p) - pricing.comp_sat(prices, p):6.2f}')
+            self.print_and_log(f'{self.players[p]:10s} ' +
+                               ' '.join([f' {value - price:6.2f}   ' for value, price in zip(row, prices)]) +
+                               f'  {pricing.comp_sat(row, p) - pricing.comp_sat(prices, p):6.2f}')
 
     def get_score(self):
         return pricing.allocation_score(self.final_matrix(), 0.25)
@@ -255,10 +249,10 @@ class AuctionState:
                         current_score = self.get_score()
                         swapped = True
                         # Use name of owner before swap
-                        print(f'Swapping {self.players[unit_j.owner]:12s} '
-                              f'{(unit_i.name[:12]):12s} <-> {(unit_j.name[:12]):12s} '
-                              f'{self.players[unit_i.owner]:12s}, '
-                              f'new score {current_score:7.3f}')
+                        self.print_and_log(f'Swapping {self.players[unit_j.owner]:12s} '
+                                           f'{(unit_i.name[:12]):12s} <-> {(unit_j.name[:12]):12s} '
+                                           f'{self.players[unit_i.owner]:12s}, '
+                                           f'new score {current_score:7.3f}')
                     else:  # return units to owners
                         unit_i.owner, unit_j.owner = unit_j.owner, unit_i.owner
         return swapped
@@ -290,13 +284,14 @@ class AuctionState:
                 if current_score < self.get_score():
                     current_score = self.get_score()
 
-                    print('\nRotating:')
+                    self.print_and_log('')
+                    self.print_and_log('Rotating:')
                     for p2 in trading_players:
-                        print(f'{self.players[p2]:12s} -> '
-                              f'{(teams[p2][indices[p2]].name[:12]):12s} -> '
-                              f'{self.players[rotation[p2]]:12s}')
-                    print(f'New score {current_score:7.3f}')
-                    print()
+                        self.print_and_log(f'{self.players[p2]:12s} -> '
+                                                f'{(teams[p2][indices[p2]].name[:12]):12s} -> '
+                                                f'{self.players[rotation[p2]]:12s}')
+                    self.print_and_log(f'New score {current_score:7.3f}')
+                    self.print_and_log('')
 
                     while self.improve_allocation_swaps():
                         pass
@@ -317,21 +312,30 @@ class AuctionState:
 
         for r_i, rotation in enumerate(rotations):
             if r_i > test_until_i and last_rotation_i < 0:
-                print('Reached latest effected rotation of prior loop. Stopping rotation early.')
+                self.print_and_log('Reached latest effected rotation of prior loop. Stopping rotation early.')
                 return last_rotation_i
 
             trading_players = [p for p, r in enumerate(rotation) if p != r]
-            print(f'{r_i:3d}/{len(rotations):3d}  Rotation {rotation}  Trading players {trading_players}')
+            self.print_and_log(f'{r_i:3d}/{len(rotations):3d}  '
+                               f'Rotation {rotation}  '
+                               f'Trading players {trading_players}')
             recursive_rotate(0)
 
         return last_rotation_i
 
     def run(self):
-        directories = [d[0] for d in misc.read_grid('directories.txt', str)]
+        # load
 
-        self.players = misc.read_grid(directories[0], str)[0]
-        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(directories[1], str))]
-        bids = misc.read_grid(directories[2], float)
+        # directories.txt contains paths as first word, subsequent words may be comments
+        # 1st line is game directory, 2nd auction dir, subsequent are synergy filenames
+        directories = [d[0] for d in misc.read_grid('directories.txt', str)]
+        game_dir = directories[0]
+        self.auct_dir = directories[1]
+
+        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(f'{game_dir}units.txt', str))]
+        self.players = misc.read_grid(f'{self.auct_dir}players.txt', str)[0]
+        self.max_team_size = len(self.units) // len(self.players)
+        bids = misc.read_grid(f'{self.auct_dir}bids.txt', float)
         misc.extend_array(bids, len(self.units), [0] * len(self.players))
         self.bid_sums = [0] * len(self.players)
 
@@ -344,24 +348,34 @@ class AuctionState:
             unit.bids = bid_row
 
         self.synergies = []
-        for filename in directories[3:]:
-            synergies = misc.read_grid(filename, float)
-            misc.extend_array(synergies, len(self.units), [0] * len(self.units))
-            for row in synergies:
+        for filename in directories[2:]:
+            next_synergies = misc.read_grid(f'{self.auct_dir}{filename}.txt', float)
+            misc.extend_array(next_synergies, len(self.units), [0] * len(self.units))
+            for row in next_synergies:
                 misc.extend_array(row, len(self.units), 0)
-            self.synergies.append(synergies)
-            self.print_synergy(len(self.synergies) - 1)
+            self.synergies.append(next_synergies)
 
         while len(self.synergies) < len(self.players):
             self.set_median_synergy()
 
-        self.print_bids()
+        # run and write
+
+        if not os.path.exists(f'{self.auct_dir}output'):
+            os.makedirs(f'{self.auct_dir}output')
+
+        self.format_bids()
+        self.write_logs('bids')
+
+        for i, player in enumerate(self.players):
+            self.format_synergy(i)
+            self.write_logs(f'synergy{player}')
 
         while len(self.units) % len(self.players) != 0:
             self.remove_least_valued_unit()
+        self.write_logs('remove_units')
 
-        self.max_team_size = len(self.units)//len(self.players)
-        self.max_sat_assign()
+        self.format_initial_assign()
+        self.write_logs('initial_assign')
 
         while self.improve_allocation_swaps():
             pass
@@ -371,8 +385,12 @@ class AuctionState:
         while test_until >= 0:
             test_until = self.improve_allocation_rotate(test_until, rotations)
 
-        self.print_value_matrices()
-        self.print_teams()
+        self.write_logs('reassignments')
+
+        self.format_value_matrices()
+        self.write_logs('matrices')
+        self.format_teams()
+        self.write_logs('teams')
 
 
 if __name__ == '__main__':

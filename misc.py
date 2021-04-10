@@ -1,4 +1,5 @@
 import itertools
+import traceback
 from typing import List, Tuple
 
 
@@ -11,19 +12,21 @@ def extend_array(array, length: int, filler) -> None:
 def read_grid(filename: str, grid_type: type = str) -> List[List]:
     try:
         file = open(filename, 'r')
-    except FileNotFoundError as error:
-        print(error)
+    except FileNotFoundError:
+        traceback.print_exc()
+        return [[]]
     else:
         print(f'reading {filename}')
         grid = []
         for line in file:
-            try:
-                next_row = [grid_type(i) for i in line.split()]
-            except ValueError as error:
-                print(error)
-            else:
-                if len(next_row) > 0:  # skip empty rows
-                    grid.append(next_row)
+            next_row = []
+            for item in line.split():
+                try:
+                    next_row.append(grid_type(item))
+                except ValueError:
+                    traceback.print_exc()
+            if len(next_row) > 0:  # skip empty rows
+                grid.append(next_row)
         file.close()
         return grid
 
