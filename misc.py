@@ -16,7 +16,7 @@ def read_grid(filename: str, grid_type: type = str) -> List[List]:
     else:
         print(f'reading {filename}')
         grid = []
-        for line in file.readlines():
+        for line in file:
             try:
                 next_row = [grid_type(i) for i in line.split()]
             except ValueError as error:

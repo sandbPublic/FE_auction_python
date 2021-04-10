@@ -3,7 +3,7 @@ import misc
 import statistics
 import random
 # import cProfile
-from typing import List
+from typing import List, Tuple
 Matrix = List[List[float]]
 
 
@@ -18,18 +18,15 @@ class Unit:
 
 
 class AuctionState:
-    def __init__(self, robust_factor: float = 0.25):
-        self.robust_factor = robust_factor  # bias in favor of good teams rather than expected victory
-        self.rotations = []
-
+    def __init__(self):
         self.players = []
         self.units = []
 
         self.max_team_size = 0
-        self.team_sizes = []  # index -1 for unassigned
 
         # index by player last for printing/reading and for consistency
         # used for redundancy adjusted team values
+
         self.bid_sums = []
 
         self.synergies = []
@@ -38,6 +35,7 @@ class AuctionState:
         # increment value of team by manual_synergy[i][j][valuer] if i and j on same team
         # should be triangular matrix since synergy i<->j == j<->i
 
+    # todo change print functions to return lists of strings to allow for writing to file as well as printing
     def print_bids(self):
         print()
         print('--BIDS--       ', end=' ')
@@ -96,19 +94,18 @@ class AuctionState:
             for row in player_synergy:
                 row.pop(least_value_i)
 
-    def clear_assign(self):
-        self.team_sizes = [0] * len(self.players)
-        self.team_sizes.append(len(self.units))  # all unassigned (team -1)
-
-        for unit in self.units:
-            unit.owner = -1
-
     # assign units in order of satisfaction, not recruitment
     def max_sat_assign(self):
         print()
         print('---Initial assignments---')
-        self.clear_assign()
-        while self.team_sizes[-1] > 0:  # unassigned units remain
+
+        team_sizes = [0] * len(self.players)
+        team_sizes.append(len(self.units))  # all unassigned (team -1)
+
+        for unit in self.units:
+            unit.owner = -1
+        
+        while team_sizes[-1] > 0:  # unassigned units remain
             max_sat = -99999
             max_sat_unit = Unit('NULL', -1)
             max_sat_player = -1
@@ -116,14 +113,14 @@ class AuctionState:
                 if unit.owner == -1:
                     for p, bid in enumerate(unit.bids):
                         sat = pricing.comp_sat(unit.bids, p)
-                        if self.team_sizes[p] < self.max_team_size and max_sat < sat:
+                        if team_sizes[p] < self.max_team_size and max_sat < sat:
                             max_sat = sat
                             max_sat_unit = unit
                             max_sat_player = p
 
-            self.team_sizes[max_sat_unit.owner] -= 1
+            team_sizes[max_sat_unit.owner] -= 1
             max_sat_unit.owner = max_sat_player
-            self.team_sizes[max_sat_unit.owner] += 1
+            team_sizes[max_sat_unit.owner] += 1
             print(f'{max_sat_unit.name:12s} to {max_sat_player} {self.players[max_sat_player]:12s}')
 
     def teams(self) -> List[List[Unit]]:
@@ -242,7 +239,7 @@ class AuctionState:
             print(f' {pricing.comp_sat(row, p) - pricing.comp_sat(prices, p):6.2f}')
 
     def get_score(self):
-        return pricing.allocation_score(self.final_matrix(), self.robust_factor)
+        return pricing.allocation_score(self.final_matrix(), 0.25)
 
     # try all swaps to improve score
     def improve_allocation_swaps(self) -> bool:
@@ -274,9 +271,9 @@ class AuctionState:
     # If this didn't rotate from rotations[test_until], only need to check until that point:
     # Complete one "lap" without any successful rotation, lap doesn't need to start at rotation[0]
     # Set last_rotation to index r whenever a rotation occurs to pass to next execution.
-    def improve_allocation_rotate(self, test_until: int) -> int:
+    def improve_allocation_rotate(self, test_until_i: int, rotations: List[Tuple[int]]) -> int:
         current_score = self.get_score()
-        last_rotation = -1
+        last_rotation_i = -1
 
         indices = [0]*len(self.players)  # of units being traded from 0~teamsize-1, set during recursive_rotate branch
         teams = self.teams()
@@ -284,7 +281,7 @@ class AuctionState:
         def recursive_rotate(p_i):
             nonlocal teams
             nonlocal current_score
-            nonlocal last_rotation
+            nonlocal last_rotation_i
 
             if p_i >= len(self.players):  # base case
                 for p in trading_players:
@@ -306,7 +303,7 @@ class AuctionState:
                     current_score = self.get_score()
 
                     teams = self.teams()
-                    last_rotation = r
+                    last_rotation_i = r_i
                 else:
                     for p in trading_players:
                         teams[p][indices[p]].owner = p  # unrotate, if teams were updated rotates to new teams
@@ -318,28 +315,26 @@ class AuctionState:
                 else:  # don't branch, this player isn't trading in this rotation, go to next player
                     recursive_rotate(p_i + 1)
 
-        for r, rotation in enumerate(self.rotations):
-            if r > test_until and last_rotation < 0:
+        for r_i, rotation in enumerate(rotations):
+            if r_i > test_until_i and last_rotation_i < 0:
                 print('Reached latest effected rotation of prior loop. Stopping rotation early.')
-                return last_rotation
+                return last_rotation_i
 
             trading_players = [p for p, r in enumerate(rotation) if p != r]
-            print(f'{r:3d}/{len(self.rotations):3d}  Rotation ', rotation, '  Trading players ', trading_players)
+            print(f'{r_i:3d}/{len(rotations):3d}  Rotation {rotation}  Trading players {trading_players}')
             recursive_rotate(0)
 
-        return last_rotation
+        return last_rotation_i
 
     def run(self):
         directories = [d[0] for d in misc.read_grid('directories.txt', str)]
 
         self.players = misc.read_grid(directories[0], str)[0]
-        self.rotations = misc.one_loop_permutations(len(self.players))
-
         self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(directories[1], str))]
-
         bids = misc.read_grid(directories[2], float)
         misc.extend_array(bids, len(self.units), [0] * len(self.players))
         self.bid_sums = [0] * len(self.players)
+
         for unit, bid_row in zip(self.units, bids):
             # if fewer than max players, create dummy players from existing bids
             while len(bid_row) < len(self.players):
@@ -371,15 +366,16 @@ class AuctionState:
         while self.improve_allocation_swaps():
             pass
 
-        test_until = len(self.rotations)
+        rotations = misc.one_loop_permutations(len(self.players))
+        test_until = len(rotations)
         while test_until >= 0:
-            test_until = self.improve_allocation_rotate(test_until)
+            test_until = self.improve_allocation_rotate(test_until, rotations)
 
         self.print_value_matrices()
         self.print_teams()
 
 
-test = AuctionState()
-
-# cProfile.run('test.run()', sort='cumulative')
-test.run()
+if __name__ == '__main__':
+    test = AuctionState()
+    # cProfile.run('test.run()', sort='cumulative')
+    test.run()
