@@ -35,6 +35,7 @@ class AuctionState:
         # increment value of team by manual_synergy[i][j][valuer] if i and j on same team
         # should be triangular matrix since synergy i<->j == j<->i
 
+        self.game_dir = ''
         self.auct_dir = ''
         self.log_strings = []
         self.logs_written = 0
@@ -323,16 +324,14 @@ class AuctionState:
 
         return last_rotation_i
 
-    def run(self):
-        # load
-
+    def load(self):
         # directories.txt contains paths as first word, subsequent words may be comments
         # 1st line is game directory, 2nd auction dir, subsequent are synergy filenames
         directories = [d[0] for d in misc.read_grid('directories.txt', str)]
-        game_dir = directories[0]
+        self.game_dir = directories[0]
         self.auct_dir = directories[1]
 
-        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(f'{game_dir}units.txt', str))]
+        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(f'{self.game_dir}units.txt', str))]
         self.players = misc.read_grid(f'{self.auct_dir}players.txt', str)[0]
         self.max_team_size = len(self.units) // len(self.players)
         bids = misc.read_grid(f'{self.auct_dir}bids.txt', float)
@@ -357,6 +356,9 @@ class AuctionState:
 
         while len(self.synergies) < len(self.players):
             self.set_median_synergy()
+
+    def run(self):
+        self.load()
 
         # run and write
 
