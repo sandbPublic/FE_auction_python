@@ -7,8 +7,9 @@ class AuctionStateVisuals(AuctionState.AuctionState):
     def __init__(self):
         super().__init__()
         self.colors = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(0,255,255),(255,0,255),(255,255,255)]
-        self.portrait_x = 96
-        self.portrait_y = 80
+        self.portraits = {}
+        self.portrait_x = 1
+        self.portrait_y = 1
         self.margin = 20
         self.x_step = self.portrait_x + self.margin
         self.y_step = self.portrait_y + self.margin
@@ -24,14 +25,13 @@ class AuctionStateVisuals(AuctionState.AuctionState):
         for unit in self.units:
             filename = f'{self.game_dir}portraits/{unit.name}.png'
             try:
-                portrait = Image.open(filename)
-                self.portrait_x = portrait.size[0]
-                self.portrait_y = portrait.size[1]
+                self.portraits[unit.name] = Image.open(filename)
+                self.portrait_x = max(self.portrait_x, self.portraits[unit.name].size[0])
+                self.portrait_y = max(self.portrait_y, self.portraits[unit.name].size[1])
             except FileNotFoundError as error:
                 print(error)
                 print(filename)
-            else:
-                break
+                self.portraits[unit.name] = Image.new('RGB', (self.portrait_x, self.portrait_y), (255,0,0))
 
         self.x_step = self.portrait_x + self.margin
         self.y_step = self.portrait_y + self.margin
@@ -43,15 +43,7 @@ class AuctionStateVisuals(AuctionState.AuctionState):
         self.bar_max_height = int(self.portrait_y * self.max_bid)
 
     def paste_portrait(self, im, unit, coord):
-        filename = f'{self.game_dir}portraits/{unit.name}.png'
-        try:
-            portrait = Image.open(filename)
-        except FileNotFoundError as error:
-            print(error)
-            print(filename)
-        else:
-            im.paste(portrait, coord)
-
+        im.paste(self.portraits[unit.name], coord)
         drawer = ImageDraw.Draw(im)
         drawer.text((coord[0] + self.margin, coord[1] + self.portrait_y + 5), unit.name, self.colors[unit.owner])
 
@@ -83,7 +75,8 @@ class AuctionStateVisuals(AuctionState.AuctionState):
     def draw_bids(self, back_color=(0,0,0)):
         self.units.sort(key=lambda unit: -sum(unit.bids))
 
-        im = Image.new('RGB', (self.x_step * len(self.units) - self.margin, self.y_step + self.bar_max_height), back_color)
+        im = Image.new('RGB', (self.x_step * len(self.units) - self.margin,
+                               self.y_step + self.bar_max_height), back_color)
         drawer = ImageDraw.Draw(im)
         for i in range(int(self.max_bid) + 1):
             drawer.line(((0, self.y_at_bid(i)), (im.size[0], self.y_at_bid(i))), (255,255,255))
@@ -110,7 +103,8 @@ class AuctionStateVisuals(AuctionState.AuctionState):
         min_clearance_pixel = [-1] * len(self.units)
         columns_used = 0
 
-        im = Image.new('RGB', (self.x_step * len(self.units) - self.margin, self.y_step + self.bar_max_height), back_color)
+        im = Image.new('RGB', (self.x_step * len(self.units) - self.margin,
+                               self.y_step + self.bar_max_height), back_color)
         drawer = ImageDraw.Draw(im)
         for i in range(int(self.max_bid) + 1):
             drawer.line(((0, self.y_at_bid(i)), (im.size[0], self.y_at_bid(i))), (255,255,255))

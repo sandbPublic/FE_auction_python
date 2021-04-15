@@ -1,3 +1,2 @@
-FE8/  # game directory
-FE8/auction3/  # auction directory
-synergyA
+FE7/  # game directory
+FE7/auction2/  # auction directory

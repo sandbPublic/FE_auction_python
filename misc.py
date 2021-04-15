@@ -10,25 +10,21 @@ def extend_array(array, length: int, filler) -> None:
 
 # reads a file as a grid of values of a specific type
 def read_grid(filename: str, grid_type: type = str) -> List[List]:
-    try:
-        file = open(filename, 'r')
-    except FileNotFoundError:
-        traceback.print_exc()
-        return [[]]
-    else:
-        print(f'reading {filename}')
-        grid = []
-        for line in file:
-            next_row = []
-            for item in line.split():
-                try:
-                    next_row.append(grid_type(item))
-                except ValueError:
-                    traceback.print_exc()
-            if len(next_row) > 0:  # skip empty rows
-                grid.append(next_row)
-        file.close()
-        return grid
+    file = open(filename, 'r')
+
+    print(f'reading {filename}')
+    grid = []
+    for line in file:
+        next_row = []
+        for item in line.split():
+            try:
+                next_row.append(grid_type(item))
+            except ValueError:
+                traceback.print_exc()
+        if len(next_row) > 0:  # skip empty rows
+            grid.append(next_row)
+    file.close()
+    return grid
 
 
 # If a permutation has one loop longer than two (because swaps are already covered) then we

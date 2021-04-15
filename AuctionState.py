@@ -63,8 +63,11 @@ class AuctionState:
         player_synergies = []
         for u_i in range(len(self.units)):
             next_synergy_row = []
-            for u_j in range(len(self.units)):
-                next_synergy_row.append(statistics.median([synergy[u_i][u_j] for synergy in self.synergies]))
+            if len(self.synergies) > 0:
+                for u_j in range(len(self.units)):
+                    next_synergy_row.append(statistics.median([synergy[u_i][u_j] for synergy in self.synergies]))
+            else:
+                next_synergy_row = [0] * len(self.units)
             player_synergies.append(next_synergy_row)
         self.synergies.append(player_synergies)
 
@@ -289,8 +292,8 @@ class AuctionState:
                     self.print_and_log('Rotating:')
                     for p2 in trading_players:
                         self.print_and_log(f'{self.players[p2]:12s} -> '
-                                                f'{(teams[p2][indices[p2]].name[:12]):12s} -> '
-                                                f'{self.players[rotation[p2]]:12s}')
+                                           f'{(teams[p2][indices[p2]].name[:12]):12s} -> '
+                                           f'{self.players[rotation[p2]]:12s}')
                     self.print_and_log(f'New score {current_score:7.3f}')
                     self.print_and_log('')
 
@@ -341,26 +344,25 @@ class AuctionState:
         for unit, bid_row in zip(self.units, bids):
             # if fewer than max players, create dummy players from existing bids
             while len(bid_row) < len(self.players):
-                bid_row.append(statistics.median(bid_row) * random.triangular(.9, 1.1))
+                bid_row.append(statistics.median(bid_row) * random.triangular(.8, 1.2))
             for i, bid in enumerate(bid_row):
                 self.bid_sums[i] += bid
             unit.bids = bid_row
 
         self.synergies = []
-        for filename in directories[2:]:
-            next_synergies = misc.read_grid(f'{self.auct_dir}{filename}.txt', float)
-            misc.extend_array(next_synergies, len(self.units), [0] * len(self.units))
-            for row in next_synergies:
-                misc.extend_array(row, len(self.units), 0)
-            self.synergies.append(next_synergies)
-
-        while len(self.synergies) < len(self.players):
-            self.set_median_synergy()
+        for player in self.players:
+            try:
+                next_synergies = misc.read_grid(f'{self.auct_dir}synergy_{player}.txt', float)
+            except FileNotFoundError:
+                self.set_median_synergy()
+            else:
+                misc.extend_array(next_synergies, len(self.units), [0] * len(self.units))
+                for row in next_synergies:
+                    misc.extend_array(row, len(self.units), 0)
+                self.synergies.append(next_synergies)
 
     def run(self):
         self.load()
-
-        # run and write
 
         if not os.path.exists(f'{self.auct_dir}output'):
             os.makedirs(f'{self.auct_dir}output')
@@ -370,7 +372,7 @@ class AuctionState:
 
         for i, player in enumerate(self.players):
             self.format_synergy(i)
-            self.write_logs(f'synergy{player}')
+            self.write_logs(f'synergy_{player}')
 
         while len(self.units) % len(self.players) != 0:
             self.remove_least_valued_unit()
