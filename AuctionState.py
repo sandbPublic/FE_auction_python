@@ -331,7 +331,7 @@ class AuctionState:
         self.game_dir = directories[0]
         self.auct_dir = directories[1]
 
-        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(f'{self.game_dir}units.txt', str))]
+        self.units = [Unit(row[0], i) for i, row in enumerate(misc.read_grid(f'{self.auct_dir}units.txt', str))]
         self.players = misc.read_grid(f'{self.auct_dir}players.txt', str)[0]
         self.max_team_size = len(self.units) // len(self.players)
         bids = misc.read_grid(f'{self.auct_dir}bids.txt', float)
